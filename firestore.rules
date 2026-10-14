@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Replace with the one pre-created administrator's actual Firebase Auth UID.
+    // This is a public identifier. Until configured, all real users are denied.
+    function admin() {
+      return request.auth != null && request.auth.uid == 'REPLACE_WITH_ADMIN_UID';
+    }
+    function text(value, maximum) { return value is string && value.size() <= maximum; }
+    function identifier(value) { return value is string && value.matches('^[a-zA-Z0-9_-]{1,120}$'); }
+    function year(value) { return value == null || (value is int && value >= 1 && value <= 9999); }
+    function bottlePath(id) { return /databases/$(database)/documents/bottles/$(id); }
+    function positionPath(id) { return /databases/$(database)/documents/positions/$(id); }
+    function historyPath(id) { return /databases/$(database)/documents/activityHistory/$(id); }
+    function winePath(id) { return /databases/$(database)/documents/wines/$(id); }
+    function outcomePath(id) { return /databases/$(database)/documents/outcomes/$(id); }
+    function location(b) {
+      return (b.locationType == 'BOTTOM' && b.row == null && b.column == null && b.depth == null && b.locationKey == 'BOTTOM')
+        || (b.locationType == 'RACK' && b.row is int && b.row >= 1 && b.row <= 12
+          && b.column is int && b.column >= 1 && b.column <= 5
+          && b.depth is int && b.depth >= 1 && b.depth <= 3
+          && b.locationKey == 'R' + ['', '1','2','3','4','5','6','7','8','9','10','11','12'][b.row]
+            + '-C' + ['', '1','2','3','4','5'][b.column] + '-D' + ['', '1','2','3'][b.depth]);
+    }
+    function validBottle(b,id) {
+      return b.keys().hasAll(['id','wineId','locationType','locationKey','row','column','depth','status','personalRating','personalNotes','version','createdAt','removedAt','updatedAt','lastActivityId'])
+        && b.keys().hasOnly(['id','wineId','locationType','locationKey','row','column','depth','status','personalRating','personalNotes','version','createdAt','removedAt','updatedAt','lastActivityId'])
+        && b.id == id && identifier(id) && identifier(b.wineId) && identifier(b.lastActivityId)
+        && location(b) && b.status in ['In Cellar','Drank','Gifted']
+        && (b.personalRating == null || (b.personalRating is int && b.personalRating >= 1 && b.personalRating <= 5))
+        && text(b.personalNotes,10000) && b.version is int && b.version >= 1
+        && b.createdAt is timestamp && b.updatedAt == request.time
+        && ((b.status == 'In Cellar' && b.removedAt == null) || (b.status != 'In Cellar' && b.removedAt is timestamp));
+    }
+    function reserved(b) {
+      return b.status != 'In Cellar' || b.locationType == 'BOTTOM'
+        || getAfter(positionPath(b.locationKey)).data.bottleId == b.id;
+    }
+    function released(old,b) {
+      return old.status != 'In Cellar' || old.locationType == 'BOTTOM'
+        || (b.status == 'In Cellar' && b.locationKey == old.locationKey)
+        || !existsAfter(positionPath(old.locationKey));
+    }
+    function linkedHistory(b,action,previous) {
+      let h = getAfter(historyPath(b.lastActivityId)).data;
+      let w = getAfter(winePath(b.wineId)).data;
+      return h.bottleId == b.id && h.bottleVersion == b.version && h.wineId == b.wineId
+        && h.wineName == w.name && h.vintage == w.vintage && h.action == action
+        && h.previousLocation == previous
+        && h.newLocation == (b.status == 'In Cellar' ? b.locationKey : null)
+        && h.createdAt == request.time;
+    }
+    function removedOutcome(b) {
+      let o = getAfter(outcomePath(b.id)).data;
+      return o.bottleId == b.id && o.status == b.status && o.removedAt == b.removedAt;
+    }
+    function validUpdate(old,b) {
+      return b.id == old.id && b.createdAt == old.createdAt && b.version == old.version + 1
+        && b.lastActivityId != old.lastActivityId && reserved(b) && released(old,b)
+        && (
+          // Edits preserve the entire storage/status history, including removedAt.
+          (b.diff(old).affectedKeys().hasOnly(['wineId','personalRating','personalNotes','version','updatedAt','lastActivityId'])
+            && linkedHistory(b,'Edited',old.status == 'In Cellar' ? old.locationKey : null))
+          || (old.status == 'In Cellar' && b.status == 'In Cellar' && b.locationKey != old.locationKey
+            && b.diff(old).affectedKeys().hasOnly(['locationType','locationKey','row','column','depth','version','updatedAt','lastActivityId'])
+            && linkedHistory(b,'Moved',old.locationKey))
+          || (old.status == 'In Cellar' && b.status in ['Drank','Gifted'] && b.removedAt == request.time
+            && b.diff(old).affectedKeys().hasOnly(['status','removedAt','version','updatedAt','lastActivityId'])
+            && linkedHistory(b,b.status,old.locationKey) && removedOutcome(b))
+        );
+    }
+    match /wines/{id} {
+      allow read: if admin();
+      allow create: if admin()
+        && request.resource.data.keys().hasAll(['id','name','producer','vintage','wineType','country','region','grapeVariety','bottleSize','tastingNotes','drinkingWindowStart','drinkingWindowEnd','imageUrl','createdAt'])
+        && request.resource.data.keys().hasOnly(['id','name','producer','vintage','wineType','country','region','grapeVariety','bottleSize','tastingNotes','drinkingWindowStart','drinkingWindowEnd','imageUrl','createdAt'])
+        && request.resource.data.id == id && identifier(id)
+        && text(request.resource.data.name,200) && request.resource.data.name.matches('.*[^ \\t\\r\\n].*')
+        && text(request.resource.data.producer,200) && year(request.resource.data.vintage)
+        && request.resource.data.wineType in ['Red','White','Rosé','Sparkling','Dessert','Fortified','Other']
+        && text(request.resource.data.country,160) && text(request.resource.data.region,160) && text(request.resource.data.grapeVariety,200)
+        && request.resource.data.bottleSize is int && request.resource.data.bottleSize >= 50 && request.resource.data.bottleSize <= 18000
+        && text(request.resource.data.tastingNotes,10000)
+        && year(request.resource.data.drinkingWindowStart) && year(request.resource.data.drinkingWindowEnd)
+        && (request.resource.data.drinkingWindowStart == null || request.resource.data.drinkingWindowEnd == null || request.resource.data.drinkingWindowStart <= request.resource.data.drinkingWindowEnd)
+        && (request.resource.data.imageUrl == null || (text(request.resource.data.imageUrl,2048) && request.resource.data.imageUrl.matches('https://.*')))
+        && request.resource.data.createdAt == request.time;
+      allow update,delete: if false;
+    }
+    match /bottles/{id} {
+      allow read: if admin();
+      allow create: if admin() && validBottle(request.resource.data,id)
+        && request.resource.data.version == 1 && request.resource.data.status == 'In Cellar'
+        && request.resource.data.createdAt == request.time && reserved(request.resource.data)
+        && linkedHistory(request.resource.data,'Added',null);
+      allow update: if admin() && validBottle(request.resource.data,id) && validUpdate(resource.data,request.resource.data);
+      allow delete: if false;
+    }
+    match /positions/{id} {
+      allow read: if admin();
+      allow create: if admin() && request.resource.data.keys().hasAll(['id','bottleId'])
+        && request.resource.data.keys().hasOnly(['id','bottleId']) && request.resource.data.id == id
+        && identifier(request.resource.data.bottleId)
+        && getAfter(bottlePath(request.resource.data.bottleId)).data.locationType == 'RACK'
+        && getAfter(bottlePath(request.resource.data.bottleId)).data.locationKey == id
+        && getAfter(bottlePath(request.resource.data.bottleId)).data.status == 'In Cellar';
+      // Occupied reservations cannot be overwritten, even in an atomic batch.
+      allow update: if false;
+      allow delete: if admin() && (
+        getAfter(bottlePath(resource.data.bottleId)).data.status != 'In Cellar'
+        || getAfter(bottlePath(resource.data.bottleId)).data.locationKey != id);
+    }
+    match /activityHistory/{id} {
+      allow read: if admin();
+      allow create: if admin() && identifier(id)
+        && request.resource.data.keys().hasAll(['id','bottleId','wineId','wineName','vintage','action','previousLocation','newLocation','bottleVersion','requestHash','createdAt'])
+        && request.resource.data.keys().hasOnly(['id','bottleId','wineId','wineName','vintage','action','previousLocation','newLocation','bottleVersion','requestHash','createdAt'])
+        && request.resource.data.id == id && identifier(request.resource.data.bottleId)
+        && request.resource.data.action in ['Added','Edited','Moved','Drank','Gifted']
+        && request.resource.data.requestHash is string && request.resource.data.requestHash.matches('^[0-9a-f]{64}$')
+        && request.resource.data.createdAt == request.time
+        && getAfter(bottlePath(request.resource.data.bottleId)).data.lastActivityId == id
+        && getAfter(bottlePath(request.resource.data.bottleId)).data.version == request.resource.data.bottleVersion
+        && getAfter(bottlePath(request.resource.data.bottleId)).data.updatedAt == request.time
+        && (!exists(bottlePath(request.resource.data.bottleId))
+          || getAfter(bottlePath(request.resource.data.bottleId)).data.version == get(bottlePath(request.resource.data.bottleId)).data.version + 1);
+      allow update,delete: if false;
+    }
+    match /outcomes/{id} {
+      allow read: if admin();
+      allow create: if admin() && request.resource.data.keys().hasAll(['id','bottleId','status','removedAt'])
+        && request.resource.data.keys().hasOnly(['id','bottleId','status','removedAt'])
+        && request.resource.data.id == id && request.resource.data.bottleId == id
+        && request.resource.data.status in ['Drank','Gifted'] && request.resource.data.removedAt == request.time
+        && get(bottlePath(id)).data.status == 'In Cellar'
+        && getAfter(bottlePath(id)).data.status == request.resource.data.status
+        && getAfter(bottlePath(id)).data.removedAt == request.time;
+      allow update,delete: if false;
+    }
+    match /settings/{id} {
+      allow read: if admin();
+      allow create: if admin() && id == 'cellar'
+        && request.resource.data.keys().hasOnly(['rackRows','rackColumns','rackDepth','rackCapacity'])
+        && request.resource.data.rackRows == 12 && request.resource.data.rackColumns == 5
+        && request.resource.data.rackDepth == 3 && request.resource.data.rackCapacity == 180;
+      allow update,delete: if false;
+    }
+    match /{document=**} { allow read,write: if false; }
+  }
+}

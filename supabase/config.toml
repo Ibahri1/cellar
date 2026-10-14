@@ -1,6 +1,0 @@
-project_id = "private-wine-cellar"
-
-[functions.admin-login]
-# Login is intentionally unauthenticated; the handler verifies the password
-# through Supabase Auth and enforces its own server-side throttle and origin list.
-verify_jwt = false

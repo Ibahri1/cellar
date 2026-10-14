@@ -1,0 +1,10 @@
+{
+  "indexes": [
+    {"collectionGroup":"activityHistory","queryScope":"COLLECTION","fields":[{"fieldPath":"action","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}]}
+  ],
+  "fieldOverrides": [
+    {"collectionGroup":"bottles","fieldPath":"personalNotes","indexes":[]},
+    {"collectionGroup":"wines","fieldPath":"tastingNotes","indexes":[]},
+    {"collectionGroup":"activityHistory","fieldPath":"requestHash","indexes":[]}
+  ]
+}

@@ -1,76 +1,67 @@
-import {createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode} from 'react';
-import {createClient, type Session} from '@supabase/supabase-js';
-import {safeError, type Bottle} from './domain';
-
-const url=import.meta.env.VITE_SUPABASE_URL?.trim();
-const key=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
-const memory=new Map<string,string>();
-const storage={getItem:(k:string)=>{try{return sessionStorage.getItem(k)??memory.get(k)??null;}catch{return memory.get(k)??null;}},setItem:(k:string,v:string)=>{try{sessionStorage.setItem(k,v);}catch{memory.set(k,v);}},removeItem:(k:string)=>{try{sessionStorage.removeItem(k);}catch{/* Memory-only session when browser storage is unavailable. */}finally{memory.delete(k);}}};
-// Inventory is never persisted in browser storage. Only standard Auth sessions
-// survive refresh in this tab; closing the tab ends local persistence.
-export const client=(()=>{try{return url&&key?createClient(url.replace(/\/+$/,''),key,{auth:{storage,storageKey:'private-cellar-auth',persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}}):null;}catch{return null;}})();
-export type Mutation = {action:string;payload:Record<string,unknown>;requestId:string};
-type Store={session:Session|null;initializing:boolean;loading:boolean;ready:boolean;error:string;notice:string;bottles:Bottle[];sync:string;refresh:()=>Promise<void>;mutate:(operation:Mutation)=>Promise<void>;logout:()=>Promise<void>};
+import {createContext,useCallback,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
+import {onAuthStateChanged,signOut,type User} from 'firebase/auth';
+import {getDocFromServer,getDocsFromServer,onSnapshot,doc,type QuerySnapshot,type DocumentData} from 'firebase/firestore';
+import {auth,db,adminUid} from './firebase';
+import {activeQuery,decodeBottle,decodeWine,loadBottle as fetchBottle,removalTotals,saveMutation,type Mutation} from './firestore';
+import {safeError,type Bottle,type Wine} from './domain';
+export type {Mutation} from './firestore';
+type Totals={drank:number;gifted:number};
+type Store={session:User|null;initializing:boolean;loading:boolean;ready:boolean;error:string;notice:string;bottles:Bottle[];totals:Totals|null;sync:string;refresh:()=>Promise<void>;mutate:(operation:Mutation)=>Promise<void>;logout:()=>Promise<void>;loadBottle:(id:string)=>Promise<Bottle|null>};
 export const CellarContext=createContext<Store|null>(null);
-const Context=CellarContext;
-export const useCellar=()=>{const value=useContext(Context);if(!value)throw Error('Cellar provider missing');return value;};
-
+export const useCellar=()=>{const context=useContext(CellarContext);if(!context)throw Error('Cellar provider missing');return context;};
 export function CellarProvider({children}:{children:ReactNode}){
- const [session,setSession]=useState<Session|null>(null),[initializing,setInitializing]=useState(true);
- const [bottles,setBottles]=useState<Bottle[]>([]),[loading,setLoading]=useState(false),[ready,setReady]=useState(false);
- const [error,setError]=useState(''),[notice,setNotice]=useState(''),[sync,setSync]=useState('Connecting'),[expiresAt,setExpiresAt]=useState<string|null>(null);
- const sessionRef=useRef<Session|null>(null),epoch=useRef(0),inFlight=useRef<Promise<void>|null>(null),dirty=useRef(false);
+ const [session,setSession]=useState<User|null>(null),[initializing,setInitializing]=useState(true),[loading,setLoading]=useState(false),[ready,setReady]=useState(false);
+ const [bottles,setBottles]=useState<Bottle[]>([]),[totals,setTotals]=useState<Totals|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[sync,setSync]=useState('Connecting');
+ const wines=useRef(new Map<string,Wine>()),generation=useRef(0),sequence=useRef(0),inFlight=useRef<Promise<void>|null>(null);
+ useEffect(()=>{
+  if(!auth){setInitializing(false);return;}
+  return onAuthStateChanged(auth,user=>{
+   generation.current++;sequence.current++;wines.current.clear();setBottles([]);setTotals(null);setReady(false);setError('');setNotice('');setLoading(false);
+   setSession(user?.uid===adminUid?user:null);setInitializing(false);
+   if(user&&user.uid!==adminUid){setError('Administrator access denied.');void signOut(auth!);}
+  },()=>{setSession(null);setInitializing(false);setError('Your login could not be restored.');});
+ },[]);
+ const process=useCallback(async(snapshot:QuerySnapshot<DocumentData>,epoch:number)=>{
+  const seq=++sequence.current;
+  const missing=Array.from(new Set(snapshot.docs.map(d=>d.data().wineId as string))).filter(id=>!wines.current.has(id));
+  await Promise.all(missing.map(async id=>{const w=await getDocFromServer(doc(db!,'wines',id));if(!w.exists())throw Error('Wine details are missing.');if(epoch===generation.current)wines.current.set(id,decodeWine(w.data()));}));
+  if(epoch!==generation.current||seq!==sequence.current)return;
+  const next=snapshot.docs.map(d=>decodeBottle(d.data(),wines.current.get(d.data().wineId)!));
+  setBottles(previous=>{const versions=new Map(next.map(b=>[b.id,b.version]));return previous.length===next.length&&previous.every(b=>versions.get(b.id)===b.version)?previous:next;});setReady(true);setLoading(false);setError('');
+ },[]);
+ const refreshCounts=useCallback(async(epoch:number)=>{const next=await removalTotals(db!);if(epoch===generation.current)setTotals(next);},[]);
+ useEffect(()=>{
+  if(!db||!session)return;
+  const epoch=generation.current;let stopped=false;setLoading(true);
+  const report=(failure:unknown)=>{if(stopped||epoch!==generation.current)return;setError(safeError(failure));setSync('Updates unavailable');setLoading(false);if((failure as {code?:string})?.code==='permission-denied'){setBottles([]);setTotals(null);setReady(false);wines.current.clear();}};
+  let first=true;
+  const unsubscribe=onSnapshot(activeQuery(db),{includeMetadataChanges:true},snapshot=>{
+   if(stopped||epoch!==generation.current||snapshot.metadata.hasPendingWrites)return;
+   if(snapshot.metadata.fromCache){setSync(navigator.onLine?'Reconnecting':'Offline · last confirmed inventory');return;}
+   setSync('Live');void process(snapshot,epoch).catch(report);
+   if(first||snapshot.docChanges().some(change=>change.type==='removed'))void refreshCounts(epoch).catch(report);
+   first=false;
+  },report);
+  const online=()=>setSync('Reconnecting'),offline=()=>setSync('Offline · last confirmed inventory');
+  window.addEventListener('online',online);window.addEventListener('offline',offline);
+  return()=>{stopped=true;unsubscribe();window.removeEventListener('online',online);window.removeEventListener('offline',offline);};
+ },[session?.uid,process,refreshCounts]);
  const refresh=useCallback(async()=>{
-  if(!client||!sessionRef.current)return;
-  if(inFlight.current){dirty.current=true;return inFlight.current;}
-  const generation=epoch.current;
-  const task=(async()=>{
-   do{
-    dirty.current=false;setLoading(true);
-    const {data,error:failure}=await client.rpc('cellar_snapshot');
-    if(generation!==epoch.current)return;
-    if(failure){setError(safeError(failure));setSync('Updates unavailable');
-     if(failure.code==='42501'||failure.code==='PGRST301'){setBottles([]);setReady(false);await client.auth.signOut({scope:'local'});}
-     break;
-    }
-    setBottles(previous=>{const incoming=data.bottles as Bottle[];const versions=new Map(incoming.map(b=>[b.id,b.version]));return previous.length===incoming.length&&previous.every(b=>versions.get(b.id)===b.version)?previous:incoming;});setExpiresAt(data.session_expires_at);setReady(true);setError('');
-   }while(dirty.current&&generation===epoch.current);
-  })().catch(()=>{if(generation===epoch.current){setError('Inventory could not be refreshed. Check your connection.');setSync('Updates unavailable');}}).finally(()=>{if(generation===epoch.current)setLoading(false);inFlight.current=null;});
+  if(!db||!auth?.currentUser||auth.currentUser.uid!==adminUid)return;
+  if(inFlight.current)return inFlight.current;
+  const epoch=generation.current;setLoading(true);
+  const task=(async()=>{const snapshot=await getDocsFromServer(activeQuery(db));await Promise.all([process(snapshot,epoch),refreshCounts(epoch)]);if(epoch===generation.current)setSync('Live');})().catch(failure=>{if(epoch===generation.current){setError(safeError(failure));setSync('Updates unavailable');}}).finally(()=>{if(epoch===generation.current)setLoading(false);inFlight.current=null;});
   inFlight.current=task;await task;
- },[]);
- useEffect(()=>{if(!session||!expiresAt)return;const timer=setTimeout(()=>{setBottles([]);setReady(false);setExpiresAt(null);void client?.auth.signOut({scope:'local'});},Math.max(0,new Date(expiresAt).getTime()-Date.now()));return()=>clearTimeout(timer);},[session?.user.id,expiresAt]);
- useEffect(()=>{
-  if(!client){setInitializing(false);return;}
-  let active=true;
-  const change=(next:Session|null)=>{sessionRef.current=next;setSession(next);setInitializing(false);if(!next){epoch.current++;setBottles([]);setReady(false);setLoading(false);setError('');}};
-  const {data:{subscription}}=client.auth.onAuthStateChange((_event,next)=>{if(active)change(next);});
-  void client.auth.getSession().then(({data,error})=>{if(active){if(error)setError('Your previous session could not be restored.');change(data.session);}});
-  return()=>{active=false;subscription.unsubscribe();};
- },[]);
- useEffect(()=>{
-  if(!client||!session?.user.id)return;
-  void refresh();let timer:ReturnType<typeof setTimeout>|undefined;let active=true;
-  const schedule=()=>{clearTimeout(timer);timer=setTimeout(()=>void refresh(),250);};
-  const channel=client.channel('shared-cellar-history').on('postgres_changes',{event:'INSERT',schema:'public',table:'activity_history'},schedule).subscribe(status=>{if(!active)return;setSync(status==='SUBSCRIBED'?'Live':status==='CHANNEL_ERROR'||status==='TIMED_OUT'?'Live updates unavailable':'Connecting');if(status==='SUBSCRIBED')schedule();});
-  const online=()=>{setSync('Reconnecting');schedule();};
-  const offline=()=>setSync('Offline');
-  const focus=()=>{if(document.visibilityState==='visible')schedule();};
-  window.addEventListener('online',online);window.addEventListener('offline',offline);window.addEventListener('focus',schedule);document.addEventListener('visibilitychange',focus);
-  return()=>{active=false;clearTimeout(timer);void client!.removeChannel(channel);window.removeEventListener('online',online);window.removeEventListener('offline',offline);window.removeEventListener('focus',schedule);document.removeEventListener('visibilitychange',focus);};
- },[session?.user.id,refresh]);
+ },[process,refreshCounts]);
  const mutate=useCallback(async(operation:Mutation)=>{
-  if(!client||!sessionRef.current)throw Error('Log in before changing inventory.');
+  if(!db||auth?.currentUser?.uid!==adminUid)throw Error('Log in before changing inventory.');
   if(!navigator.onLine)throw Error('You are offline. Reconnect before saving.');
-  const {error:failure}=await client.rpc('mutate_cellar',{p_action:operation.action,p_payload:operation.payload,p_request_id:operation.requestId});
-  if(failure){await refresh();throw Error(safeError(failure));}
-  setNotice('Saved to your cellar.');await refresh();
- },[refresh]);
- const logout=useCallback(async()=>{
-  if(!client)return;
-  const {error:failure}=await client.auth.signOut({scope:'local'});
-  if(failure){setError('Logout could not be confirmed. Reconnect and try again.');return;}
-  setNotice('');
+  try{await saveMutation(db,operation);setNotice('Saved to your cellar.');}
+  catch(failure){throw Error(safeError(failure));}
+  // Collection listeners apply only confirmed snapshots; no optimistic inventory.
  },[]);
+ const logout=useCallback(async()=>{if(!auth)return;try{await signOut(auth);}catch{setError('Logout could not be completed. Please try again.');}},[]);
+ const loadBottle=useCallback(async(id:string)=>db?fetchBottle(db,id,wines.current):null,[]);
  useEffect(()=>{if(notice){const timer=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(timer);}},[notice]);
- return <Context.Provider value={{session,initializing,loading,ready,error,notice,bottles,sync,refresh,mutate,logout}}>{children}</Context.Provider>;
+ return <CellarContext.Provider value={{session,initializing,loading,ready,error,notice,bottles,totals,sync,refresh,mutate,logout,loadBottle}}>{children}</CellarContext.Provider>;
 }

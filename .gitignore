@@ -4,4 +4,6 @@ dist/
 .env.*
 !.env.example
 *.tsbuildinfo
-supabase/.temp/
+.firebase/
+*-debug.log
+ui-debug.log

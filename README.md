@@ -1,138 +1,127 @@
-# Private Cellar — Phase 3
+# Private Cellar — Firebase / GitHub Pages
 
-The existing React/TypeScript/Vite static site now includes password-only administrator login, Supabase inventory operations, a separate BOTTOM storage region, searchable inventory, basic statistics and persistent activity history. The cellar image is unchanged. No external account, repository, DNS record or deployment has been modified.
+The existing cellar website now uses the official Firebase JavaScript SDK, Firebase Authentication and Cloud Firestore. It is designed for **Firebase Spark** and remains a static GitHub Pages site at **https://ibahri1.github.io/cellar/**, with source intended for **https://github.com/Ibahri1/cellar**. No external account, repository, DNS record, cloud database or deployment was modified during this migration.
 
-**Cloud status:** implementation is prepared locally. No Supabase project or credentials were supplied, so real password verification, hosted migrations, cloud persistence and two-device synchronization have not been verified. Without configuration, the production interface displays a setup message and disabled login; it does not substitute local inventory or a browser-only password check.
+The cellar image, landscape-only layouts, navigation, rack overlay, panels, inventory forms, search and dark/gold styling are preserved. There are 180 main rack positions and separate full-width BOTTOM storage. The twelve logical rack bands still need physical calibration because the unchanged image shows eleven clearly distinguishable horizontal rows; adjust `src/rack.ts` without changing the image.
 
-## Run locally
+## Local use
 
-Use Node.js 22.18+ or 24. From this directory:
+Use Node.js 22.18+ or 24:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open the printed localhost URL. `npm run build` checks TypeScript and builds `dist`; `npm run preview` serves it. `npm test` runs the embedded PostgreSQL/RLS and login-handler tests without any cloud accounts. PGlite is a development-only dependency and is not bundled into the website.
+Copy `.env.example` to `.env`, fill in the six **public** Firebase values described below, and restart Vite. Without configuration, the existing login card displays a setup message and disables login. There is no fake local inventory or browser-only password gate.
 
-For layout checks before cloud setup, `/tests/ui.html` on the **development server only** is clearly labeled TEST ONLY. It uses an empty collection, cannot save, does not bypass production authentication, and is not included in `dist`. Test code does not contain real credentials or sample inventory presented as real.
+`npm run build` checks TypeScript and creates `dist`; `npm run preview` serves that production build. HashRouter and relative Vite base `./` keep assets and page refreshes compatible with `/cellar/` and future custom domains. `/tests/ui.html` on the development server is a clearly labeled empty UI fixture that cannot save; it is not included in `dist`.
 
-## Rack mapping
+## Firebase setup — do these steps only when ready to configure the cloud project
 
-Main rack: **12 rows × 5 columns × 3 depths = 180 positions**. Rows run top to bottom, columns left to right. Locations are `R1-C1-D1` through `R12-C5-D3`. `BOTTOM` is a single full-width target beneath the racks with no row/column/depth or fixed bottle capacity. Every bottom bottle still has a unique database record. Counts and capacity calculations keep bottom storage separate.
-
-**Calibration remains required.** The image shows eleven clearly distinguishable horizontal bottle rows. `src/rack.ts` therefore explicitly defines twelve *logical* bands inside the rack zone; it does not claim twelve perfectly aligned visible shelves. Adjust each row/column rectangle against the physical cellar. The image is preserved, not regenerated or stretched. Row 12 no longer includes the bottom shelf. Settings explains this limitation.
-
-## Supabase setup — perform only when you approve cloud changes
-
-Use a dedicated Supabase project. The migration creates two narrowly scoped Postgres roles and one shared collection; it is not intended to be applied blindly to an unrelated existing database. Review the migration before executing it. The project uses standard Supabase Auth sessions, with the password entered only in the login form and verified server-side.
-
-### 1. Provision the administrator securely
-
-In Supabase Dashboard → Authentication, create **one confirmed email/password user**. Enter a strong random administrator password directly in the secure Dashboard form (prefer a password manager). Do not put that password in code, shell arguments, `.env`, logs, GitHub variables or documentation. Supabase Auth stores a salted bcrypt verifier; this project never stores a plaintext password. Keep within the password length supported by your Auth configuration. Disable public signups, anonymous sign-in and unused authentication providers. Set the access-token lifetime to about 15 minutes; keep refresh-token rotation enabled.
-
-The website asks only for a password. The account email is configured on the server as `ADMIN_EMAIL`. As explicitly accepted for this project, standard authenticated Supabase sessions expose their subject UUID and let a session holder retrieve their account email from Auth; that identity is not a second secret. The password and backend database credential remain private.
-
-### 2. Apply the migration and authorize that identity
-
-The local migration is `supabase/migrations/20261014003753_cellar_inventory.sql`. Apply it once using the Dashboard SQL editor, or link the CLI and push the migration after reviewing the target project. The migration enables RLS, explicitly grants client SELECT privileges, restricts writes to the mutation RPC, and adds `activity_history` to `supabase_realtime`.
-
-After applying it, run this in the private Dashboard SQL editor, replacing the placeholder with the administrator's Authentication user UUID:
-
-```sql
-insert into private.admin_access(singleton,user_id)
-values (true,'YOUR_ADMIN_AUTH_USER_UUID'::uuid);
-```
-
-Do not add `private` to the exposed Data API schemas. Keep public tables under RLS. There are no anonymous inventory reads/writes, public user administration or financial fields.
-
-### 3. Configure the restricted login database role
-
-The login function uses a direct/pooler connection only for login throttling and registering the standard Auth session. It does **not** use a service-role key. `cellar_login` cannot read or modify wine inventory. Enable login for this role in the SQL editor:
-
-```sql
-alter role cellar_login login connection limit 5;
-```
-
-Connect with `psql` as your project administrator over TLS and run the interactive command `\password cellar_login`. Enter a strong **separate database role password** when prompted; never reuse the cellar administrator password. This keeps the role password out of command arguments and shell history. If using another trusted database client, use its secure role-password interface.
-
-Use the project's transaction pooler host from Dashboard → Connect. The connection string for the Edge Function uses the restricted role, e.g.:
+1. Create or select your Firebase project and confirm it is on the **Spark plan with no billing account attached**. Register a Web app, leaving Firebase Hosting unchecked. Do not enable Analytics, Cloud Functions, Cloud Storage, extensions or other services for this website.
+2. Enable Authentication → Sign-in method → **Email/Password**. Do not enable email-link login. In Authentication → Users, manually create one administrator account. Set a strong password directly in Firebase Console or your password manager; never place it in code, `.env`, shell arguments, GitHub variables or documentation. The website exposes no signup, registration, email, username, forgot-password or account-management interface.
+3. Copy that user's **UID** and account email. Replace the literal `REPLACE_WITH_ADMIN_UID` in `firestore.rules` with the UID. It is a public identifier, not a password. The frontend UID below must match it exactly. The rules deny all real users until this is configured.
+4. Create the **default Cloud Firestore database, Standard edition, in production mode**. Choose a suitable region for your devices. Do not use public test-mode rules. Publish the supplied `firestore.rules` and `firestore.indexes.json` to that project when you authorize cloud deployment. Keep the default deny rule for unknown collections.
+5. In Firebase Authentication → Settings → Authorized domains, add `ibahri1.github.io` (domain only, no `/cellar/` path). Add your localhost development domain when needed, and your actual custom domain only after it is assigned. Retain the project's Firebase Auth domain. The supplied `authDomain` should be the project's Firebase auth domain, not the GitHub Pages URL.
+6. Copy `.env.example` to `.env` and enter the Web app's public configuration and the two administrator identifiers:
 
 ```text
-postgresql://cellar_login.PROJECT_REF:URL_ENCODED_ROLE_PASSWORD@YOUR_POOLER_HOST:6543/postgres
+VITE_FIREBASE_API_KEY=YOUR_WEB_APP_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_AUTH_DOMAIN
+VITE_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
+VITE_FIREBASE_APP_ID=YOUR_WEB_APP_APP_ID
+VITE_FIREBASE_ADMIN_EMAIL=YOUR_PRECREATED_ADMIN_EMAIL
+VITE_FIREBASE_ADMIN_UID=YOUR_PRECREATED_ADMIN_UID
 ```
 
-Use your actual pooler host and project reference; TLS is required by the function. `prepare:false` supports transaction pooling. Test connectivity with the restricted role. Do not use the `postgres` database password or a service-role/secret API key in this connection string.
+These are public browser settings. **There is no password variable.** Do not add service-account keys, private keys or Admin SDK credentials to the frontend. The real administrator password goes only into the password field and Firebase's standard `signInWithEmailAndPassword` call. Login and session restoration both check the UID; Firestore rules independently enforce that same UID for every read/write.
 
-### 4. Set server secrets and deploy the login function
+7. Optionally create `settings/cellar` once with exactly these integer fields (the app also keeps the matching rack constants in code):
 
-Copy `supabase/functions/.env.example` to the ignored `supabase/functions/.env`. Fill in:
+```json
+{"rackRows":12,"rackColumns":5,"rackDepth":3,"rackCapacity":180}
+```
 
-- `ADMIN_EMAIL`: the internal confirmed Auth user's email.
-- `AUTH_PUBLISHABLE_KEY`: the project's public publishable key.
-- `LOGIN_DATABASE_URL`: the restricted role's TLS pooler connection string.
-- `ALLOWED_ORIGINS`: exact permitted frontend origins, comma separated; include `http://127.0.0.1:5173` for local testing and the real production origin when assigned. No URL paths or trailing slashes. A repository Pages site uses `https://USERNAME.github.io` as its origin.
-
-There is deliberately **no admin-password environment variable**. `SUPABASE_URL` is provided automatically to hosted Edge Functions. Set these secrets through the Dashboard's Edge Function secrets interface or the CLI using the ignored env file. Deploy `supabase/functions/admin-login/index.ts` as `admin-login`. The checked-in `config.toml` sets `verify_jwt=false` for this **login endpoint only** because it must receive unauthenticated password submissions. Its handler independently checks origins, enforces the database rate limit and calls Supabase Auth. It fails closed if any server configuration is missing.
-
-The login function permits at most ten password attempts per 15-minute window across the shared cellar. This simple global limiter avoids depending on spoofable IP headers and needs no paid rate-limit service. A deliberate attacker can temporarily exhaust that window; review this tradeoff before publishing. Supabase's own Auth limits also apply. Direct Auth sessions are not authorized for cellar access until the restricted login function registers them, so calling Auth directly cannot bypass the cellar login throttle to gain data access.
-
-If using the CLI, after explicitly approving these cloud changes and authenticating it, the verified command sequence is:
+If using Firebase CLI after explicitly approving cloud changes, authenticate to your intended project, then deploy **only** Firestore configuration:
 
 ```sh
-supabase link --project-ref YOUR_PROJECT_REF
-supabase db push --dry-run
-supabase db push
-# Complete steps 2–3 above (administrator UUID and restricted role password).
-supabase secrets set --env-file supabase/functions/.env
-supabase functions deploy admin-login --use-api
+npx firebase deploy --only firestore:rules,firestore:indexes --project YOUR_PROJECT_ID
 ```
 
-Use interactive credential prompts rather than password flags. If you already applied the migration through the SQL editor, do not also push it as a new migration without reconciling migration history. The function deployment uses the checked-in `verify_jwt=false` setting; do not turn off validation on protected inventory operations.
+No Firebase Hosting, Functions or Storage configuration exists in `firebase.json`. Do not run an unrelated deployment target. Test actual login, live persistence and two physical devices before relying on the collection. Local emulator success does not prove your hosted project is configured correctly.
 
-### 5. Configure the frontend
+## Required GitHub Actions variables
 
-Copy `.env.example` to `.env`, then populate only:
+Under repository Settings → Secrets and variables → Actions → **Variables**, add these six values:
 
-```text
-VITE_SUPABASE_URL=YOUR_PROJECT_URL
-VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLIC_PUBLISHABLE_KEY
+| Variable | Value |
+| --- | --- |
+| `VITE_FIREBASE_API_KEY` | Firebase Web app API key |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase project's Auth domain |
+| `VITE_FIREBASE_PROJECT_ID` | Firebase project ID |
+| `VITE_FIREBASE_APP_ID` | Registered Firebase Web app ID |
+| `VITE_FIREBASE_ADMIN_EMAIL` | Pre-created administrator email |
+| `VITE_FIREBASE_ADMIN_UID` | Same administrator UID as in `firestore.rules` |
+
+The existing official Pages Actions workflow now reads these variables. Remove obsolete backend variables from your repository settings yourself when ready; the build no longer reads them. Set repository Pages Source to GitHub Actions. A main-branch push triggers deployment, so **do not push/deploy until authorized**. `.env` files are ignored. No domain was supplied; a future custom domain can use Pages settings plus `public/CNAME`, with DNS configured separately by you.
+
+## Firestore structure and integrity
+
+| Collection | Purpose |
+| --- | --- |
+| `wines` | Immutable normalized wine records/revisions; camelCase fields, optional HTTPS image URL and recorded drinking window |
+| `bottles` | Individual bottle records; `wineId`, coordinates, location key, exact status, notes/rating, timestamps, version and last activity ID |
+| `positions` | Deterministic `R1-C1-D1` reservation IDs, each linked to exactly one active rack bottle |
+| `activityHistory` | Immutable Added/Edited/Moved/Drank/Gifted events with wine snapshot, locations, bottle version and retry hash |
+| `outcomes` | One immutable record per removed bottle; enables count queries for Drank/Gifted without downloading archived bottles |
+| `settings` | Fixed rack dimensions/capacity; BOTTOM is additional |
+
+UI field names are adapted at the data boundary so the existing forms and business logic remain intact. BOTTOM records use `locationType: "BOTTOM"`, `locationKey: "BOTTOM"` and null row/column/depth; no reservation document is needed. There is no total BOTTOM capacity constraint.
+
+All related changes use a Firestore transaction. Rules use `getAfter()` to require the corresponding history and reservation state, validate coordinates against the deterministic location ID, forbid reservation overwrites, require release of an old rack reservation and require an outcome when a bottle is removed. Bottles and history cannot be deleted through the app. Wines and outcomes are immutable. Unknown fields/collections, unsupported statuses, changed creation timestamps, invalid coordinates and direct edits that skip history are denied.
+
+Edits create a wine revision for only the selected bottle. Other bottles and old history retain their original details. Version checks reject stale edits or removal confirmations; stable request/bottle/history IDs make an unchanged retry idempotent. Drank/Gifted remain confirmed UI actions, preserve the dated bottle record and free the rack location. A failed atomic save leaves no partial inventory/history/reservation changes.
+
+**Per-save limit: three bottles.** This bounds rules' document access calls below Firestore's transaction limits, including all validation. Add further batches for larger quantities. This is not a fixed capacity for BOTTOM or a change to the 180-slot main rack. The UI explains the limit before saving.
+
+Rules secure client operations; project owners, Admin SDK/server credentials and Firebase Console can bypass them. Do not use privileged tools to rewrite bottle/reservation/history documents independently. Such external edits are outside the client's integrity guarantees. No privileged credentials are used in this website.
+
+## Synchronization, performance and free-plan behavior
+
+- One collection-level listener tracks active bottles. Referenced immutable wines are fetched once and cached in memory for the session. No per-rack subscriptions or polling.
+- History has its own paginated listener only while the History page is open. Later pages use stable timestamp/document-ID cursors; a new first-page event resets pagination. Archived bottle details load only when requested.
+- Drank/Gifted totals use server aggregation queries over `outcomes` at initial load, removal events and explicit refresh. Ordinary inventory use does not download historical bottles or history.
+- Only server-confirmed snapshots update inventory. Transactions require connectivity; offline operations fail visibly rather than silently queuing inventory writes. An open tab can display its last confirmed inventory with an offline label, and Firestore reconnects automatically.
+- Firebase Auth uses standard session persistence within the tab. Wine inventory has no persistent disk/localStorage cache. Auth refresh and logout use the SDK, with no custom tokens, hashes, server password gate or old eight-hour session policy.
+- Spark quotas still apply to document reads/writes, rule lookups, stored history and listeners. Reconnects/refreshes can cause reads. Exhausted quotas are shown as errors; the project never enables billing automatically. Use Firebase's Usage dashboard to monitor them.
+- Firebase's built-in password protections apply. There is no custom global throttle or Cloud Function. The internal email/UID and Web app configuration are public, as requested; rules, not configuration secrecy, protect inventory. Other Auth accounts—even if created through Firebase's APIs—cannot read this cellar unless they have the exact authorized UID.
+
+## Tests and verification
+
+```sh
+npm test
+# Requires Java 21+ on PATH; starts/stops only local Auth and Firestore emulators:
+npm run test:rules
+npm run build
 ```
 
-Restart Vite after changing env files. For GitHub Pages builds, add those same two public values as repository **variables** (the existing workflow reads `vars.*`). Never put the admin password, internal email, restricted DB connection string or Supabase secret/service-role key in a `VITE_` variable. Do not commit any real `.env` file. Only the frontend's public settings are embedded in its build.
+The emulator suite uses the fixed **demo-private-cellar** project and refuses to run without loopback emulator hosts. Fixture accounts/passwords are local test data, not real credentials or a proposed administrator password. No Firebase login or live project is needed. The CLI may download the official Firestore emulator on first use; Java is only a development/test requirement, not a website runtime dependency.
 
-## Inventory and security behavior
+Tests cover correct/incorrect password, UID rejection, logout, anonymous/unrelated-user denial, unknown collections, a three-rack transaction, 183 additional BOTTOM bottles, atomic rollback, idempotency, simultaneous occupancy attempts, stale edits, all movement directions, Drank/Gifted records, history tampering, missing history/reservations, invalid coordinates, collection listener updates, history pagination and settings validation. Existing domain tests cover all 180 logical rack addresses and separate capacity calculations. Browser checks use the unchanged landscape/portrait interface and clearly labeled empty UI fixture.
 
-- Add individual bottles in one atomic batch; rack destinations must be unique and available, while multiple bottles can share BOTTOM. Saved wines can be reused, and matching producer/name/vintage is flagged.
-- Edit creates an immutable wine revision for that bottle so other bottles and previous history keep their original information. Personal ratings/notes are editable.
-- Move between rack positions and bottom storage. A partial unique index protects active rack occupancy even when devices race.
-- Drank/Gifted require explicit UI confirmation, free the active position, preserve the bottle and record the removal date.
-- `version` checks reject stale edits and stale removal confirmations. A request UUID makes retrying the same save idempotent. A failed batch rolls back wines, bottles, history and its request record together.
-- Authenticated clients cannot write tables directly or alter/delete history. The public RPC delegates to a private function owned by a dedicated NOLOGIN writer role with RLS still enforced. Only the narrow private authorization/session lookup functions run with elevated privileges; execute grants are restricted and search paths fixed.
-- Every protected query/write requires the configured administrator UUID, a registered login session, a live `auth.sessions` row and an eight-hour maximum session age. Logout revokes the current device session. Other devices keep their own sessions. The UI clears expired inventory; RLS remains authoritative.
-- Standard Auth tokens persist in `sessionStorage` for refreshes within the tab; wine data is kept only in memory. Closing the tab normally ends that local persistence. Browser-accessible session tokens carry the usual XSS risk for static SPAs; no third-party scripts or custom token signing are introduced.
-- One Realtime channel listens for the shared cellar's history inserts. Every mutation writes history, so one debounced refresh updates inventory and statistics. Reconnect, focus and successful saves also refresh; there is no polling or per-rack subscription. History loads on demand in cursor-based pages.
-- Network errors are visible and a save is never reported successful until the RPC confirms it. Retry an unconfirmed request with the same unchanged form to reuse its request UUID. Closing an unconfirmed form loses that in-memory request key; inspect refreshed inventory before starting a new addition.
+**Not live-tested:** hosted Firebase credentials, production rules/index deployment, real cloud persistence, physical-device synchronization and actual GitHub Pages deployment. Verify those after cloud setup. Calibrate the logical row bands against the physical cellar before entering real bottle locations.
 
-## Verification and remaining setup
+The runtime dependency audit is checked separately with `npm audit --omit=dev`. A compatible patched gRPC override addresses the Firebase SDK's Node transport advisory. The development-only Firebase CLI dependency tree still reports upstream advisories; it is not bundled into `dist`. Do not apply `npm audit fix --force` blindly or downgrade the SDK to resolve CLI-only warnings. Review/update test tooling as upstream fixes become available.
 
-Local tests exercise actual PostgreSQL constraints and RLS using PGlite, including all 180 rack slots, more than 180 bottom bottles, rollback, idempotency, stale versions, history, revoked/expired sessions and restricted-role throttling. Login-handler unit tests mock Auth/DB and cover success, wrong password, rate limit, bad origin, oversized input and server failures. They do not replace a hosted authentication test.
+External wine lookup, label recognition, advanced recommendations and import/export reports remain outside this migration. No paid Firebase service or wine API is used. No existing cloud data was migrated or deleted; the prior project had no supplied cloud configuration. Obsolete backend source, tests, packages and build variables were removed locally; existing Git history retains the previous implementation if needed.
 
-Before using real inventory, verify in your configured project:
+## Files changed
 
-1. Correct/incorrect password login, throttling, refresh and logout. Confirm a direct Auth login without registration cannot read inventory.
-2. Anonymous and unrelated-user REST reads/writes are denied; private schemas remain unexposed. Run Supabase Security Advisors and resolve findings before production.
-3. Add rack and multiple bottom bottles, refresh/close/reopen, and check cloud persistence.
-4. Open two independently logged-in devices. Add, edit, move and remove bottles on each; verify live updates and recovery after offline/focus changes.
-5. Attempt the same destination and edit version from both devices. Confirm one succeeds, the conflicting operation fails, and no partial history or overwritten bottle remains.
-6. Calibrate all twelve logical rows against the physical cellar, check mobile/tablet landscape layouts and portrait rotation, then verify the production Pages hash URLs refresh correctly.
+- Added `src/firebase.ts`, `src/auth.ts`, `src/firestore.ts` for modular Firebase configuration, authentication and transactions/data mapping.
+- Replaced `src/store.tsx` integration; updated `src/Login.tsx`, `src/pages.tsx`, `src/domain.ts`, and the quantity guidance in `src/BottleManager.tsx`.
+- Added `firestore.rules`, `firestore.indexes.json`, `firebase.json`, and emulator tests; updated the existing UI fixture.
+- Updated `.env.example`, `.gitignore`, `package.json`, lockfile, `.github/workflows/pages.yml`, SDK chunk caching in `vite.config.ts`, and this guide.
+- Removed the obsolete database migration, Edge Function, backend config and backend-only tests/dependencies. Preserved `public/cellar.png`, `src/Home.tsx`, rack mapping, styles and routing.
 
-Not implemented in this phase: external wine lookup, label recognition, CSV import/export, PDF reports or advanced recommendations. No paid service or external wine API is used. Bottom storage has no logical capacity limit; actual Supabase storage, query and function quotas still apply. The shared snapshot loads all bottle records and immutable wine data for this personal cellar; very large long-term inventories may need further pagination/archiving.
-
-## GitHub Pages and custom domain
-
-The existing `.github/workflows/pages.yml` is preserved. Place this project's contents at your authorized repository root; select Settings → Pages → GitHub Actions. A push to main triggers its build/deployment. **Do not push/deploy until you authorize it.** The frontend remains static: no continuously running Node server, SSR or backend routes. Relative Vite base `./` and HashRouter support repository subpaths and custom domains. Tests and server source are not in `dist`.
-
-No domain was supplied. When chosen, set it in Pages settings and add `public/CNAME` containing that domain. A subdomain uses a DNS CNAME to `USERNAME.github.io` with no repository path. An apex domain uses GitHub's current documented A/AAAA or supported ALIAS/ANAME records. Verify ownership, wait for DNS and enable HTTPS. Add the final frontend origin to `ALLOWED_ORIGINS` and update Supabase site URLs. No DNS changes are automated.
-
-References: [Supabase password security](https://supabase.com/docs/guides/auth/password-security), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [Auth rate limits](https://supabase.com/docs/guides/auth/rate-limits), [Realtime changes](https://supabase.com/docs/guides/realtime/postgres-changes), [GitHub custom domains](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site).
+Official references: [Firebase password authentication](https://firebase.google.com/docs/auth/web/password-auth), [Auth session persistence](https://firebase.google.com/docs/auth/web/auth-state-persistence), [atomic writes and rules](https://firebase.google.com/docs/firestore/manage-data/transactions), [rules conditions and limits](https://firebase.google.com/docs/firestore/security/rules-conditions), [Spark pricing](https://firebase.google.com/pricing), [Emulator Suite](https://firebase.google.com/docs/emulator-suite/install_and_configure).

@@ -2,6 +2,7 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {X, Wine as WineIcon,LoaderCircle} from 'lucide-react';
 import {availablePositions,blockedBy,bottom,locationLabel,wineTypes,wineIdentity,type Bottle,type Placement,type Wine} from './domain';
 import {useCellar} from './store';
+import {MAX_ADD_BATCH} from './firestore';
 export type Editor = {mode:'add';location?:Placement}|{mode:'details'|'edit'|'move'|'Drank'|'Gifted';bottle:Bottle};
 type WineDraft=Omit<Wine,'id'>;
 const emptyWine:WineDraft={name:'',producer:'',vintage:null,wine_type:'Red',country:'',region:'',grape_variety:'',bottle_size:750,tasting_notes:'',image_url:null,drinking_window_start:null,drinking_window_end:null};
@@ -32,7 +33,7 @@ export default function BottleManager({editor,onClose,onChange}:{editor:Editor;o
  async function submit(e:FormEvent){e.preventDefault();if(busy)return;setError('');
   const payload:Record<string,unknown>={};
   if(editor.mode==='add'){
-   if(!Number.isSafeInteger(quantity)||quantity<1){setError('Enter a whole number of bottles.');return;}
+   if(!Number.isSafeInteger(quantity)||quantity<1||quantity>MAX_ADD_BATCH){setError(`Add 1–${MAX_ADD_BATCH} bottles per atomic save. Bottom storage has no total capacity limit.`);return;}
    const places=placements[0].location_type==='BOTTOM'?Array.from({length:quantity},()=>bottom):placements.slice(0,quantity);
    if(places.length!==quantity){setError('Choose one storage position for every bottle.');return;}
    const keys=places.filter(p=>p.location_type==='RACK').map(locationLabel);
@@ -64,7 +65,7 @@ export default function BottleManager({editor,onClose,onChange}:{editor:Editor;o
  <label>Wine type<select value={wine.wine_type} onChange={e=>field('wine_type',e.target.value)}>{wineTypes.map(t=><option key={t}>{t}</option>)}</select></label>
  {(['country','region','grape_variety'] as const).map(k=><label key={k}>{k==='grape_variety'?'Grape variety':k==='country'?'Country':'Region'}<input list={`${k}-options`} maxLength={k==='grape_variety'?200:160} value={wine[k]} onChange={e=>field(k,e.target.value)}/></label>)}
  <label>Bottle size<select value={wine.bottle_size} onChange={e=>field('bottle_size',+e.target.value)}>{Array.from(new Set([187,375,500,750,1000,1500,3000,6000,wine.bottle_size])).sort((a,b)=>a-b).map(n=><option key={n} value={n}>{n} ml</option>)}</select></label>
- {editor.mode==='add'&&<label>Quantity<input type="number" min={1} step={1} required value={quantity} onChange={e=>changeQuantity(+e.target.value)}/></label>}
+ {editor.mode==='add'&&<label>Quantity · up to {MAX_ADD_BATCH} per save<input type="number" min={1} max={MAX_ADD_BATCH} step={1} required value={quantity} onChange={e=>changeQuantity(+e.target.value)}/></label>}
  <label>Personal rating<select value={rating??''} onChange={e=>setRating(e.target.value?+e.target.value:null)}><option value="">Not rated</option>{[1,2,3,4,5].map(n=><option key={n} value={n}>{n} / 5</option>)}</select></label>
  <label className="wide">Personal notes<textarea maxLength={10000} value={notes} onChange={e=>setNotes(e.target.value)}/></label></div>
  <datalist id="producer-options">{suggestions('producer').map(s=><option key={s} value={s}/>)}</datalist><datalist id="country-options">{suggestions('country',commonCountries).map(s=><option key={s} value={s}/>)}</datalist><datalist id="region-options">{suggestions('region').map(s=><option key={s} value={s}/>)}</datalist><datalist id="grape_variety-options">{suggestions('grape_variety',commonGrapes).map(s=><option key={s} value={s}/>)}</datalist>
