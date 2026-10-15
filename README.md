@@ -1,8 +1,20 @@
-# Private Cellar — Firebase / GitHub Pages
+# BAHRI | Private Wine Cellar — Firebase / GitHub Pages
 
 The existing cellar website uses the official Firebase JavaScript SDK, Firebase Authentication and Cloud Firestore. It is designed for **Firebase Spark** and remains a static GitHub Pages site at **https://ibahri1.github.io/cellar/**, with source intended for **https://github.com/Ibahri1/cellar**. These upgrades change local source only. No external account, repository, DNS record, cloud database or deployment was modified.
 
 Landscape layouts, navigation, login, inventory, search and the dark/gold styling are preserved. `public/cellar.png` is the exact new supplied image, verified by SHA-256, with twelve visible rack rows and bottom storage. `src/rack.ts` contains individually calibrated row bands and column widths in the image's 1536 × 1024 coordinate space. The same geometry drives clicking and camera targeting; existing R1-C1-D1 through R12-C5-D3 IDs and BOTTOM assignments are unchanged.
+
+## BAHRI branding
+
+`public/bahri-logo.png` is an exact copy of the official 1774×887 artwork (SHA-256 `E6122D324977E3EEB3855463BC717333F9A851CB60E7280C6F72F3270555D963`). It is not regenerated, cropped or re-encoded. `src/BrandLogo.tsx` reuses that single file for sidebar, mobile dashboard/More, page/bottle headers, footers and loading states. The original functional wine/navigation icons and ordinary cellar wording remain.
+
+The login page uses this same file as its CSS background, scaled proportionally with a matching layout spacer that keeps the form below the artwork. Desktop, phone portrait/landscape and tablet layouts allow vertical scrolling on short screens; no `cover` cropping is used. Authentication code and behavior are unchanged.
+
+The favicon and home-screen PNGs (`bahri-mark-64.png`, `-180.png`, `-192.png`, `-512.png`) are deterministic crops/resizes of the original gold grape ornament at source rectangle x=822, y=692, width=126, height=126. They introduce no new illustration. `site.webmanifest` sets the BAHRI name and relative start/icon paths; it adds no service worker or offline functionality. The document title is **BAHRI | Private Wine Cellar**. Open Graph metadata uses the supplied public GitHub Pages address and the full logo, without private inventory information.
+
+All runtime branding references use Vite's base URL; HTML icon/manifest references use `%BASE_URL%`, and manifest paths are relative. No Firebase, rules, database, inventory, image-scanning, rack geometry or original cellar-image changes are needed. Deploy only the frontend when authorized. Existing browser/home-screen/social-preview caches may require a refresh or removing/re-adding the home-screen shortcut. If moving to a custom domain later, update the `og:url` and absolute `og:image` values in `index.html`.
+
+**Files in this branding update:** added `src/BrandLogo.tsx`, `src/branding.css`, `public/bahri-logo.png`, four `public/bahri-mark-*.png` icons and `public/site.webmanifest`; updated `index.html`, `src/Login.tsx`, `src/main.tsx`, `src/Home.tsx`, `src/pages.tsx`, `src/BottleManager.tsx`, `src/MobileShell.tsx`, `tests/ui.tsx`, `tests/ui.html` and this README. No dependencies were added.
 
 ## Upgrades
 
@@ -178,3 +190,11 @@ Advanced AI wine identification and full-resolution photo storage are not implem
 - Updated `tests/domain.test.mjs`, `tests/firebase.test.mjs`, `tests/ui.tsx`; added `tests/upgrades.test.mjs` and synthetic `tests/fixtures` images. Existing login/configuration/workflow files are preserved.
 
 Official references: [Firebase password authentication](https://firebase.google.com/docs/auth/web/password-auth), [Auth session persistence](https://firebase.google.com/docs/auth/web/auth-state-persistence), [atomic writes and rules](https://firebase.google.com/docs/firestore/manage-data/transactions), [rules conditions and limits](https://firebase.google.com/docs/firestore/security/rules-conditions), [Spark pricing](https://firebase.google.com/pricing), [Emulator Suite](https://firebase.google.com/docs/emulator-suite/install_and_configure).
+
+## BAHRI inactivity screensaver
+
+After authenticated sign-in, 30 seconds without mouse, pointer, keyboard, scrolling or touch activity opens a full-viewport black screensaver using the original `public/bahri-logo.png`. The artwork is contained without cropping. Clicking/tapping anywhere, Enter/Space, or Escape dismisses it without navigating, reloading, changing inventory or signing out. The current screen and open menus remain mounted; a new 30-second timer starts after dismissal.
+
+The clock pauses while an input is focused, a bottle form is open (including photo selection/compression, OCR and saving), inventory/history is loading, a historical bottle is opening, a cellar replay is running, or the browser tab is hidden. Returning to an idle-ready screen starts a fresh 30 seconds. Future async UI operations can expose `aria-busy="true"` or `data-screensaver-pause="true"` to participate. Reduced-motion preferences disable the fade.
+
+`npm test` covers the timer deadline, activity resets, pause/resume and cleanup. The development-only `tests/ui.html?fixtures=1&screensaver=1#/cellar` enables browser checks using marked synthetic inventory with database writes disabled; its `/login` route disables the screensaver. This fixture is excluded from production. No new dependencies or Firebase configuration/rules changes are required. Deploy only the website when approved.

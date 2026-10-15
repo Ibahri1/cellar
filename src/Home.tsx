@@ -1,3 +1,4 @@
+import BrandLogo from './BrandLogo';
 import {useEffect,useRef,useState} from 'react';
 import {useLocation,useNavigate} from 'react-router-dom';
 import CellarReplay from './CellarReplay';
@@ -33,7 +34,7 @@ export default function Home({reducedMotionOverride}:{reducedMotionOverride?:boo
  const position:Placement|null=selected&&selected!=='BOTTOM'&&depth!==null?{location_type:'RACK',row_number:selected.row,column_number:selected.column,depth_number:depth+1}:null;
  const current=position?active.find(b=>locationLabel(b)===locationLabel(position)):null;
  return <main className="home" onKeyDown={e=>{if(e.key==='Escape'&&!editor)close();}}>
-  {mobile&&!replayId&&<header className="mobile-cellar-heading"><span className="eyebrow">PRIVATE CELLAR</span><h1>Your cellar</h1><p>Pinch to explore. Tap a rack to open it.</p></header>}
+  {mobile&&!replayId&&<header className="mobile-cellar-heading"><BrandLogo className="brand-logo--small"/><h1>Your cellar</h1><p>Pinch to explore. Tap a rack to open it.</p></header>}
   <CellarViewer stage={stage} replaying={Boolean(replayId)} onManipulate={cancelTap}><img draggable={false} src={`${import.meta.env.BASE_URL}cellar.png`} alt="Glass-enclosed wine cellar with warm brass lighting, stone walls and five dark wine racks"/>
    <svg viewBox={`0 0 ${rack.width} ${rack.height}`} aria-label="Select a rack position" className="rack-overlay">
     {positions.map(p=><rect key={p.id} x={p.x} y={p.y} width={p.width} height={p.height} rx="9" role="button" tabIndex={0} aria-label={`Row ${p.row}, column ${p.column}; view three depths`} aria-pressed={selected!=='BOTTOM'&&selected?.id===p.id} className={selected!=='BOTTOM'&&selected?.id===p.id?'selected':''} onClick={e=>selectRack(p,e.currentTarget,true)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();triggerRef.current=e.currentTarget;if(replayId)navigate('/',{replace:true});setSelected(p);setDepth(null);}}}><title>{p.id}</title></rect>)}
