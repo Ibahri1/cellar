@@ -6,6 +6,36 @@ Landscape layouts, navigation, login, inventory, search and the dark/gold stylin
 
 ## Upgrades
 
+### Mobile experience
+
+Phones now work in portrait and landscape, with an independent dark/gold layout. Portrait tablets up to 900 px wide also use it. Landscape screens above 1023 px and ordinary desktop widths retain the existing design. The phone landscape breakpoint additionally covers widths up to 1023 px when the height is at most 500 px; it does not use browser identity detection.
+
+- Fixed safe-area-aware **Cellar / My Wines / Add Bottle / History / More** navigation, with a raised Add button and content space reserved above the navigation. More opens Statistics, Settings, Search and sign-out.
+- A contained cellar viewer with pointer-based pinch zoom, drag/pan, double-tap zoom, accessible zoom buttons and Reset View. Zoom is bounded to 1–8×. The unchanged image and `src/rack.ts` map drive all selections. A Row/Column/Depth picker complements the image; swipe down on the rack sheet's handle to dismiss it. BOTTOM remains shared storage.
+- Individual bottle cards with photos or a placeholder, vintage, custom wine type, location, status and optional price. Existing search/filter/sort logic is reused; the mobile inventory shows active bottles, with removed bottles available through History. It does not fetch an extra archived collection for a status filter.
+- Full-screen mobile bottle details and forms, a prominent Show in Cellar action, large photo previews, camera/OCR actions near the start of Add Bottle, 16 px inputs, numeric price/vintage keyboards, sticky Save and error messages. Saves retain the existing atomic transactions and request IDs; a synchronous submission lock prevents rapid repeated submits.
+- Mobile editors stay mounted outside route content, preserving drafts across in-app navigation, browser hash Back and orientation changes. Closing a changed form asks whether to keep editing or discard. Reload/close warnings are best-effort browser behavior, not durable draft storage; keep the tab open until saving. Drafts/photos are not written to localStorage.
+- Mobile replay uses the same targeting graphics and map, bounds camera movement to the image, and keeps its identification/Return controls above navigation. Middle and Back remain explicitly labeled. Skip and reduced motion are supported; BOTTOM shows the complete shared area.
+- History uses a readable timeline over the existing pagination/listener. Statistics and Settings reflow into touch-friendly cards/rows. Private photo loading and lazy OCR remain unchanged. VisualViewport sizing keeps modal controls within the visible keyboard area where the browser reports it; browser zoom remains allowed.
+
+**No new dependencies or Firebase/schema/rules changes were made for the mobile overhaul.** The image, rack constants, authentication, Firestore transactions, store, indexes and rules are unchanged. No cloud operations or deployment were performed. Only a frontend deployment is needed when authorized.
+
+**Verification:** 13 domain/OCR/mobile geometry tests and 23 Firebase emulator checks pass. The production build includes TypeScript checks. Browser QA used simulated viewports: 375×667, 390×844, 430×932, 360×800, 768×1024, 1440×900 and the corresponding phone/tablet landscape sizes. Inventory had no horizontal overflow. All 60 rack selections, Front/Middle/Back and BOTTOM, quick picker, double-tap zoom, mouse drag/pan, swipe dismissal, navigation, filtering, replay/Skip/Return/reduced motion, draft retention, failed-save recovery, image upload/preview/removal and readable/blank OCR were exercised using labeled synthetic fixtures. Home and inventory screenshots at 1440×900 matched their pre-change desktop screenshots byte-for-byte.
+
+The real login layout and password-visibility control were checked without submitting credentials. Login/logout, add/edit/move/Drank/Gifted, reservations, history and synchronization pass in local emulators. **Not real-device/live-cloud tested:** Safari/Android behavior, two-finger hardware gestures, camera capture/permissions, software-keyboard/safe-area behavior, live login/writes, cross-device cloud synchronization or Pages deployment. Pinch anchoring/bounds are covered by pure geometry tests; the browser's pan/double-click checks are mouse-driven. UI save failures in the synthetic fixture are intentional and do not write to Firebase.
+
+#### Test on your phone
+
+From this project folder, using the existing `.env`, run:
+
+```sh
+npm run dev -- --host 0.0.0.0
+```
+
+On the same trusted Wi-Fi, open `http://YOUR_PC_LAN_IP:5173/` on your phone. Allow the development server through your private-network firewall if needed. Use `/tests/ui.html?fixtures=1#/` to explore labeled synthetic inventory without logging in or writing records; this test page is excluded from the production build. Use the root URL to test the actual existing administrator login. Local LAN camera behavior varies; use the HTTPS Pages site after an authorized frontend deployment to verify camera capture on real Safari/Chrome. Stop Vite with Ctrl+C afterwards. These instructions do not change Firebase configuration, expose a password or deploy anything.
+
+**Files changed for mobile:** `index.html`, `package.json`, `src/main.tsx`, `src/Home.tsx`, `src/pages.tsx`, `src/BottleManager.tsx`, `src/CellarReplay.tsx`, `src/PhotoEditor.tsx`, `tests/ui.tsx` and this README. Added `src/mobile.ts`, `src/mobile-editor.ts`, `src/MobileShell.tsx`, `src/CellarViewer.tsx`, `src/viewer.ts`, `src/mobile.css` and `tests/mobile.test.mjs`. The original desktop stylesheets are untouched.
+
 - **Show in Cellar:** active bottle details open a roughly three-second column/row tracking and camera zoom replay. Skip Animation, Return to Full Cellar and reduced-motion support are included. A bottle-ID hash URL survives refresh and uses its current saved location. Middle/Back have explicit depth indicators and share the visible rack target; BOTTOM highlights the whole shared area.
 - **Bottle Price ($):** optional individual `bottles.priceCents`, stored as safe nonnegative integer USD cents. Blank means “Not specified”; zero is a valid price. Editing, moving, Drank and Gifted preserve the price. No valuations or financial statistics were added.
 - **Wine Type:** free text with optional suggestions, trimmed before saving, accepted by filters and statistics. Drinking-window inputs/details are removed. Older wines with those fields remain readable and unchanged; editing creates a new wine revision without them. No migration/backfill/reset is needed.
