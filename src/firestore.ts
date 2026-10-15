@@ -1,20 +1,21 @@
 import {collection,doc,getDocFromServer,getCountFromServer,query,where,runTransaction,serverTimestamp,type DocumentData,type Firestore,type Timestamp} from 'firebase/firestore';
-import {locationLabel,wineTypes,type Activity,type Bottle,type Placement,type Wine} from './domain.ts';
+import {locationLabel,type Activity,type Bottle,type Placement,type Wine} from './domain.ts';
+import {validPhotoData} from './photos.ts';
 export type Mutation={action:string;payload:Record<string,unknown>;requestId:string};
 // Three bottles fit the rules' 20-access-call atomic-operation budget. This is
 // a per-save transport limit, NOT a limit on total BOTTOM inventory.
 export const MAX_ADD_BATCH=3;
 export const activeQuery=(db:Firestore)=>query(collection(db,'bottles'),where('status','==','In Cellar'));
 const date=(t:Timestamp|null)=>t?.toDate().toISOString()??null;
-export function decodeWine(d:DocumentData):Wine{return {id:d.id,name:d.name,producer:d.producer,vintage:d.vintage,wine_type:d.wineType,country:d.country,region:d.region,grape_variety:d.grapeVariety,bottle_size:d.bottleSize,tasting_notes:d.tastingNotes,image_url:d.imageUrl,drinking_window_start:d.drinkingWindowStart,drinking_window_end:d.drinkingWindowEnd};}
-export function decodeBottle(d:DocumentData,wine:Wine):Bottle{return {id:d.id,wine_id:d.wineId,wine,location_type:d.locationType,row_number:d.row,column_number:d.column,depth_number:d.depth,status:d.status,personal_rating:d.personalRating,personal_notes:d.personalNotes,version:d.version,created_at:date(d.createdAt)!,removed_at:date(d.removedAt)};}
+export function decodeWine(d:DocumentData):Wine{return {id:d.id,name:d.name,producer:d.producer,vintage:d.vintage,wine_type:d.wineType,country:d.country,region:d.region,grape_variety:d.grapeVariety,bottle_size:d.bottleSize,tasting_notes:d.tastingNotes,image_url:d.imageUrl??null};}
+export function decodeBottle(d:DocumentData,wine:Wine):Bottle{return {id:d.id,wine_id:d.wineId,wine,location_type:d.locationType,row_number:d.row,column_number:d.column,depth_number:d.depth,status:d.status,personal_rating:d.personalRating,personal_notes:d.personalNotes,version:d.version,created_at:date(d.createdAt)!,removed_at:date(d.removedAt),price_cents:d.priceCents??null,photo_id:d.photoId??null};}
 export function decodeActivity(d:DocumentData):Activity{return {id:d.id,bottle_id:d.bottleId,wine_name:d.wineName,vintage:d.vintage,action:d.action,previous_location:d.previousLocation,new_location:d.newLocation,created_at:date(d.createdAt)!};}
 function fail(code:string,message:string):never{throw Object.assign(Error(message),{code});}
 function validText(v:unknown,max:number,required=false){return typeof v==='string'&&v.length<=max&&(!required||v.trim().length>0);}
 function year(v:unknown){return v===null||(Number.isInteger(v)&&Number(v)>=1&&Number(v)<=9999);}
 export function encodeWine(w:Wine,id:string){
- if(!w||!validText(w.name,200,true)||!validText(w.producer,200)||!wineTypes.includes(w.wine_type as typeof wineTypes[number])||!year(w.vintage)||!validText(w.country,160)||!validText(w.region,160)||!validText(w.grape_variety,200)||!Number.isInteger(w.bottle_size)||w.bottle_size<50||w.bottle_size>18000||!validText(w.tasting_notes,10000)||!(w.image_url===null||(validText(w.image_url,2048)&&w.image_url.startsWith('https://')))||!year(w.drinking_window_start)||!year(w.drinking_window_end)||(w.drinking_window_start!==null&&w.drinking_window_end!==null&&w.drinking_window_start>w.drinking_window_end))fail('invalid-argument','Check the wine details.');
- return {id,name:w.name.trim(),producer:w.producer,vintage:w.vintage,wineType:w.wine_type,country:w.country,region:w.region,grapeVariety:w.grape_variety,bottleSize:w.bottle_size,tastingNotes:w.tasting_notes,imageUrl:w.image_url,drinkingWindowStart:w.drinking_window_start,drinkingWindowEnd:w.drinking_window_end,createdAt:serverTimestamp()};
+ if(!w||!validText(w.name,200,true)||!validText(w.producer,200)||!validText(w.wine_type,160,true)||!year(w.vintage)||!validText(w.country,160)||!validText(w.region,160)||!validText(w.grape_variety,200)||!Number.isInteger(w.bottle_size)||w.bottle_size<50||w.bottle_size>18000||!validText(w.tasting_notes,10000)||!(w.image_url===null||(validText(w.image_url,2048)&&w.image_url.startsWith('https://'))))fail('invalid-argument','Check the wine details.');
+ return {id,name:w.name.trim(),producer:w.producer,vintage:w.vintage,wineType:w.wine_type.trim(),country:w.country,region:w.region,grapeVariety:w.grape_variety,bottleSize:w.bottle_size,tastingNotes:w.tasting_notes,imageUrl:w.image_url,createdAt:serverTimestamp()};
 }
 function encodeLocation(p:Placement){
  if(!p||(p.location_type!=='RACK'&&p.location_type!=='BOTTOM'))fail('invalid-argument','Choose a storage location.');
@@ -39,6 +40,12 @@ export async function saveMutation(db:Firestore,operation:Mutation){
  const locations=places.map(encodeLocation);
  if(new Set(locations.filter(p=>p.locationType==='RACK').map(p=>p.locationKey)).size!==locations.filter(p=>p.locationType==='RACK').length)fail('already-exists','Each rack bottle needs a different position.');
  const personalNotes=payload.personal_notes??'',personalRating=payload.personal_rating??null;
+ const priceCents=payload.price_cents;
+ if(priceCents!==undefined&&priceCents!==null&&(!Number.isSafeInteger(priceCents)||Number(priceCents)<0))fail('invalid-argument','Enter a valid price in integer USD cents.');
+ const photoData=payload.photo_data;
+ if(photoData!==undefined&&photoData!==null&&!validPhotoData(photoData))fail('invalid-argument','Choose a valid compressed JPEG thumbnail.');
+ if(photoData&&action==='add'&&places.length>1)fail('invalid-argument','Save one bottle at a time when attaching a new photo.');
+ const photoRef=photoData?doc(db,'photos',`${requestId}_photo`):null;
  if(['add','edit'].includes(action)&&(!validText(personalNotes,10000)||!(personalRating===null||(Number.isInteger(personalRating)&&Number(personalRating)>=1&&Number(personalRating)<=5))))fail('invalid-argument','Check the personal notes and rating.');
  const hash=await requestHash(operation),size=action==='add'?places.length:1;
  const historyRefs=Array.from({length:size},(_,i)=>doc(db,'activityHistory',`${requestId}_${i}`));
@@ -67,11 +74,17 @@ export async function saveMutation(db:Firestore,operation:Mutation){
   if(reservations.some(s=>s.exists()))fail('already-exists','That rack position is occupied.');
   if(action==='move'&&before!.locationKey===destination!.locationKey)fail('invalid-argument','Choose a different destination.');
   if(newWine)transaction.set(wineRef,newWine);
+  if(photoRef)transaction.set(photoRef,{id:photoRef.id,dataUrl:photoData,createdAt:serverTimestamp()});
   for(let i=0;i<size;i++){
    const old=beforeSnapshots[i].data(),id=bottleRefs[i].id;
    const location=action==='add'?locations[i]:action==='move'?destination!:null;
    const removed=action==='Drank'||action==='Gifted';
    const next:DocumentData=action==='add'?{id,wineId,...location,status:'In Cellar',personalRating,personalNotes,version:1,createdAt:serverTimestamp(),removedAt:null,updatedAt:serverTimestamp(),lastActivityId:historyRefs[i].id}:{...old,version:old!.version+1,updatedAt:serverTimestamp(),lastActivityId:historyRefs[i].id,...(action==='edit'?{wineId,personalRating,personalNotes}:{}),...(location??{}),...(removed?{status:action,removedAt:serverTimestamp()}:{})};
+   if(action==='add'||action==='edit'){
+    if(priceCents!==undefined||action==='add')next.priceCents=priceCents??null;
+    if(photoRef)next.photoId=photoRef.id;
+    else if(photoData===null||action==='add')next.photoId=null;
+   }
    if(old?.status==='In Cellar'&&old.locationType==='RACK'&&(action==='move'||removed))transaction.delete(doc(db,'positions',old.locationKey));
    if(location?.locationType==='RACK')transaction.set(doc(db,'positions',location.locationKey),{id:location.locationKey,bottleId:id});
    transaction.set(bottleRefs[i],next);

@@ -1,0 +1,11 @@
+Local OCR uses Tesseract.js 7.0.0 and its tesseract.js-core dependency.
+Project: https://github.com/naptha/tesseract.js
+Apache License 2.0 copies: ocr/Tesseract-LICENSE.txt and
+ocr/Tesseract-core-LICENSE.txt (copied from the installed packages).
+These OCR artifacts are unmodified.
+
+English language package: @tesseract.js-data/eng 1.0.0
+Project: https://github.com/naptha/tessdata
+Package author: Balearica <admin@scribeocr.com>
+Package-declared license: MIT.
+Language model: 4.0.0_best_int/eng.traineddata.gz, distributed unmodified.

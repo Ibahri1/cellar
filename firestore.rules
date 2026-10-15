@@ -4,7 +4,7 @@ service cloud.firestore {
     // Replace with the one pre-created administrator's actual Firebase Auth UID.
     // This is a public identifier. Until configured, all real users are denied.
     function admin() {
-      return request.auth != null && request.auth.uid == 'REPLACE_WITH_ADMIN_UID';
+      return request.auth != null && request.auth.uid == 'ZKYzuAjJ9rRd32hT0kSW7edEzOZ2';
     }
     function text(value, maximum) { return value is string && value.size() <= maximum; }
     function identifier(value) { return value is string && value.matches('^[a-zA-Z0-9_-]{1,120}$'); }
@@ -14,6 +14,7 @@ service cloud.firestore {
     function historyPath(id) { return /databases/$(database)/documents/activityHistory/$(id); }
     function winePath(id) { return /databases/$(database)/documents/wines/$(id); }
     function outcomePath(id) { return /databases/$(database)/documents/outcomes/$(id); }
+    function photoPath(id) { return /databases/$(database)/documents/photos/$(id); }
     function location(b) {
       return (b.locationType == 'BOTTOM' && b.row == null && b.column == null && b.depth == null && b.locationKey == 'BOTTOM')
         || (b.locationType == 'RACK' && b.row is int && b.row >= 1 && b.row <= 12
@@ -24,11 +25,14 @@ service cloud.firestore {
     }
     function validBottle(b,id) {
       return b.keys().hasAll(['id','wineId','locationType','locationKey','row','column','depth','status','personalRating','personalNotes','version','createdAt','removedAt','updatedAt','lastActivityId'])
-        && b.keys().hasOnly(['id','wineId','locationType','locationKey','row','column','depth','status','personalRating','personalNotes','version','createdAt','removedAt','updatedAt','lastActivityId'])
+        && b.keys().hasOnly(['id','wineId','locationType','locationKey','row','column','depth','status','personalRating','personalNotes','version','createdAt','removedAt','updatedAt','lastActivityId','priceCents','photoId'])
         && b.id == id && identifier(id) && identifier(b.wineId) && identifier(b.lastActivityId)
         && location(b) && b.status in ['In Cellar','Drank','Gifted']
         && (b.personalRating == null || (b.personalRating is int && b.personalRating >= 1 && b.personalRating <= 5))
         && text(b.personalNotes,10000) && b.version is int && b.version >= 1
+        // Omitted legacy fields and explicit nulls both mean unspecified.
+        && (b.get('priceCents',null) == null || (b.priceCents is int && b.priceCents >= 0 && b.priceCents <= 9007199254740991))
+        && (b.get('photoId',null) == null || (identifier(b.photoId) && getAfter(photoPath(b.photoId)).data.id == b.photoId))
         && b.createdAt is timestamp && b.updatedAt == request.time
         && ((b.status == 'In Cellar' && b.removedAt == null) || (b.status != 'In Cellar' && b.removedAt is timestamp));
     }
@@ -59,7 +63,7 @@ service cloud.firestore {
         && b.lastActivityId != old.lastActivityId && reserved(b) && released(old,b)
         && (
           // Edits preserve the entire storage/status history, including removedAt.
-          (b.diff(old).affectedKeys().hasOnly(['wineId','personalRating','personalNotes','version','updatedAt','lastActivityId'])
+          (b.diff(old).affectedKeys().hasOnly(['wineId','personalRating','personalNotes','version','updatedAt','lastActivityId','priceCents','photoId'])
             && linkedHistory(b,'Edited',old.status == 'In Cellar' ? old.locationKey : null))
           || (old.status == 'In Cellar' && b.status == 'In Cellar' && b.locationKey != old.locationKey
             && b.diff(old).affectedKeys().hasOnly(['locationType','locationKey','row','column','depth','version','updatedAt','lastActivityId'])
@@ -72,17 +76,17 @@ service cloud.firestore {
     match /wines/{id} {
       allow read: if admin();
       allow create: if admin()
-        && request.resource.data.keys().hasAll(['id','name','producer','vintage','wineType','country','region','grapeVariety','bottleSize','tastingNotes','drinkingWindowStart','drinkingWindowEnd','imageUrl','createdAt'])
+        && request.resource.data.keys().hasAll(['id','name','producer','vintage','wineType','country','region','grapeVariety','bottleSize','tastingNotes','imageUrl','createdAt'])
         && request.resource.data.keys().hasOnly(['id','name','producer','vintage','wineType','country','region','grapeVariety','bottleSize','tastingNotes','drinkingWindowStart','drinkingWindowEnd','imageUrl','createdAt'])
         && request.resource.data.id == id && identifier(id)
         && text(request.resource.data.name,200) && request.resource.data.name.matches('.*[^ \\t\\r\\n].*')
         && text(request.resource.data.producer,200) && year(request.resource.data.vintage)
-        && request.resource.data.wineType in ['Red','White','Rosé','Sparkling','Dessert','Fortified','Other']
+        && text(request.resource.data.wineType,160) && request.resource.data.wineType.matches('.*[^ \\t\\r\\n].*')
         && text(request.resource.data.country,160) && text(request.resource.data.region,160) && text(request.resource.data.grapeVariety,200)
         && request.resource.data.bottleSize is int && request.resource.data.bottleSize >= 50 && request.resource.data.bottleSize <= 18000
         && text(request.resource.data.tastingNotes,10000)
-        && year(request.resource.data.drinkingWindowStart) && year(request.resource.data.drinkingWindowEnd)
-        && (request.resource.data.drinkingWindowStart == null || request.resource.data.drinkingWindowEnd == null || request.resource.data.drinkingWindowStart <= request.resource.data.drinkingWindowEnd)
+        && year(request.resource.data.get('drinkingWindowStart',null)) && year(request.resource.data.get('drinkingWindowEnd',null))
+        && (request.resource.data.get('drinkingWindowStart',null) == null || request.resource.data.get('drinkingWindowEnd',null) == null || request.resource.data.drinkingWindowStart <= request.resource.data.drinkingWindowEnd)
         && (request.resource.data.imageUrl == null || (text(request.resource.data.imageUrl,2048) && request.resource.data.imageUrl.matches('https://.*')))
         && request.resource.data.createdAt == request.time;
       allow update,delete: if false;
@@ -135,6 +139,17 @@ service cloud.firestore {
         && get(bottlePath(id)).data.status == 'In Cellar'
         && getAfter(bottlePath(id)).data.status == request.resource.data.status
         && getAfter(bottlePath(id)).data.removedAt == request.time;
+      allow update,delete: if false;
+    }
+    // Private, immutable compressed thumbnails, not unrestricted image storage.
+    match /photos/{id} {
+      allow read: if admin();
+      allow create: if admin() && identifier(id)
+        && request.resource.data.keys().hasAll(['id','dataUrl','createdAt'])
+        && request.resource.data.keys().hasOnly(['id','dataUrl','createdAt'])
+        && request.resource.data.id == id && text(request.resource.data.dataUrl,110000)
+        && request.resource.data.dataUrl.matches('data:image/jpeg;base64,/9j/[A-Za-z0-9+/]+={0,2}')
+        && request.resource.data.createdAt == request.time;
       allow update,delete: if false;
     }
     match /settings/{id} {

@@ -10,6 +10,7 @@ import {doc,collection,getDoc,getDocs,query,where,orderBy,documentId,limit,start
 import {saveMutation,loadBottle,removalTotals,activeQuery,MAX_ADD_BATCH} from '../src/firestore.ts';
 import {authenticateAdmin} from '../src/auth.ts';
 import {allRackPositions,bottom} from '../src/domain.ts';
+import {encodeWine} from '../src/firestore.ts';
 
 const projectId='demo-private-cellar';
 let env,db,other,unauth,auth,app,uid;
@@ -27,7 +28,12 @@ before(async()=>{
  app=initializeApp({projectId,apiKey:'emulator-only-public-key',appId:'emulator-fixture'},'auth-test');
  auth=initializeAuth(app,{persistence:inMemoryPersistence});connectAuthEmulator(auth,'http://127.0.0.1:9099',{disableWarnings:true});
  uid=(await createUserWithEmailAndPassword(auth,email,password)).user.uid;await signOut(auth);
- const rules=(await readFile(new URL('../firestore.rules',import.meta.url),'utf8')).replaceAll('REPLACE_WITH_ADMIN_UID',uid);
+ const source=await readFile(new URL('../firestore.rules',import.meta.url),'utf8');
+ const owner=/request\.auth\.uid\s*==\s*'[^']+'/g;
+ assert.equal([...source.matchAll(owner)].length,1,'Rules must contain exactly one explicit administrator UID restriction.');
+ // Only the in-memory emulator copy uses the generated test account. The
+ // configured real administrator UID in firestore.rules is never modified.
+ const rules=source.replace(owner,`request.auth.uid == '${uid}'`);
  env=await initializeTestEnvironment({projectId,firestore:{host:'127.0.0.1',port:8080,rules}});
  await env.clearFirestore();db=env.authenticatedContext(uid).firestore();other=env.authenticatedContext('another-user').firestore();unauth=env.unauthenticatedContext().firestore();
 });
@@ -139,5 +145,39 @@ test('Firebase Authentication and Firestore rules/transactions',async t=>{
   await setDoc(doc(db,'settings','cellar'),{rackRows:12,rackColumns:5,rackDepth:3,rackCapacity:180});
   await assertFails(updateDoc(doc(db,'settings','cellar'),{rackCapacity:181}));
   await assert.rejects(saveMutation(db,add(Array.from({length:MAX_ADD_BATCH+1},()=>bottom))));
+ });
+ await t.test('USD cents, custom types and private thumbnails persist through edit, move and removal',async()=>{
+  const photo='data:image/jpeg;base64,'+(await readFile(new URL('./fixtures/test-bottle.jpg',import.meta.url))).toString('base64');
+  const op=add([bottom],{wine:{...wine,wine_type:'  My Custom Red Blend  '},price_cents:1999,photo_data:photo});await saveMutation(db,op);
+  let bottle=await loadBottle(db,`${op.requestId}_0`);assert.equal(bottle.price_cents,1999);assert.equal(bottle.wine.wine_type,'My Custom Red Blend');
+  const photoId=bottle.photo_id;const device=env.authenticatedContext(uid).firestore();assert.equal((await getDoc(doc(device,'photos',photoId))).data().dataUrl,photo);
+  for(const context of [unauth,other])await assertFails(getDoc(doc(context,'photos',photoId)));
+  await saveMutation(db,mutate('edit',bottle,{wine:bottle.wine,personal_notes:'Price edit',personal_rating:4,price_cents:7500}));bottle=await loadBottle(device,bottle.id);assert.equal(bottle.price_cents,7500);assert.equal(bottle.photo_id,photoId);
+  await saveMutation(db,mutate('move',bottle,{location:rack(6,2,3)}));bottle=await loadBottle(db,bottle.id);assert.equal(bottle.price_cents,7500);assert.equal(bottle.photo_id,photoId);
+  await saveMutation(db,mutate('Drank',bottle));bottle=await loadBottle(db,bottle.id);assert.equal(bottle.price_cents,7500);assert.equal(bottle.photo_id,photoId);
+  await saveMutation(db,mutate('edit',bottle,{wine:bottle.wine,personal_notes:'Replace photo',personal_rating:4,price_cents:25050,photo_data:photo}));bottle=await loadBottle(db,bottle.id);assert.notEqual(bottle.photo_id,photoId);assert.equal(bottle.price_cents,25050);
+  await saveMutation(db,mutate('edit',bottle,{wine:bottle.wine,personal_notes:'Remove photo and price',personal_rating:4,price_cents:null,photo_data:null}));bottle=await loadBottle(db,bottle.id);assert.equal(bottle.photo_id,null);assert.equal(bottle.price_cents,null);
+ });
+ await t.test('legacy documents with windows and no price remain readable and editable without a reset',async()=>{
+  const legacyWine={...encodeWine(wine,'legacy-wine'),drinkingWindowStart:2022,drinkingWindowEnd:2030};
+  const legacy={...await raw(third.id),id:'legacy-bottle',wineId:'legacy-wine',locationType:'BOTTOM',locationKey:'BOTTOM',row:null,column:null,depth:null,lastActivityId:'legacy-history'};delete legacy.priceCents;delete legacy.photoId;
+  await env.withSecurityRulesDisabled(async context=>{await setDoc(doc(context.firestore(),'wines','legacy-wine'),legacyWine);await setDoc(doc(context.firestore(),'bottles','legacy-bottle'),legacy);});
+  let bottle=await loadBottle(db,'legacy-bottle');assert.equal(bottle.price_cents,null);assert.equal(bottle.wine.drinking_window_start,undefined);
+  await saveMutation(db,mutate('edit',bottle,{wine:{...bottle.wine,wine_type:'Champagne'},personal_notes:'Legacy edit',personal_rating:null,price_cents:0}));bottle=await loadBottle(db,'legacy-bottle');assert.equal(bottle.price_cents,0);
+  assert.equal((await getDoc(doc(db,'wines','legacy-wine'))).data().drinkingWindowStart,2022);
+  assert.equal((await getDoc(doc(db,'wines',bottle.wine_id))).data().drinkingWindowStart,undefined);
+ });
+ await t.test('rules reject fractional/negative prices, oversized photos and unsupported photo formats',async()=>{
+  const original=await raw(third.id),savedWine=(await getDoc(doc(db,'wines',original.wineId))).data();
+  function priceEdit(price){
+   const id=randomUUID(),batch=writeBatch(db);
+   batch.update(doc(db,'bottles',third.id),{priceCents:price,version:original.version+1,updatedAt:serverTimestamp(),lastActivityId:id});
+   batch.set(doc(db,'activityHistory',id),{id,bottleId:third.id,wineId:original.wineId,wineName:savedWine.name,vintage:savedWine.vintage,action:'Edited',previousLocation:original.locationKey,newLocation:original.locationKey,bottleVersion:original.version+1,requestHash:'a'.repeat(64),createdAt:serverTimestamp()});
+   return batch.commit();
+  }
+  for(const price of [-1,19.99,9007199254740992])await assertFails(priceEdit(price));
+  await priceEdit(1999);assert.equal((await loadBottle(db,third.id)).price_cents,1999);
+  for(const dataUrl of ['data:image/svg+xml,<svg/>','data:image/jpeg;base64,/9j/'+'A'.repeat(110000)]){const id=randomUUID();await assertFails(setDoc(doc(db,'photos',id),{id,dataUrl,createdAt:serverTimestamp()}));}
+  await assertFails(setDoc(doc(db,'wines','blank-type'),{...encodeWine(wine,'blank-type'),wineType:'  '}));
  });
 });

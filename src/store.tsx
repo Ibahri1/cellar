@@ -6,17 +6,18 @@ import {activeQuery,decodeBottle,decodeWine,loadBottle as fetchBottle,removalTot
 import {safeError,type Bottle,type Wine} from './domain';
 export type {Mutation} from './firestore';
 type Totals={drank:number;gifted:number};
-type Store={session:User|null;initializing:boolean;loading:boolean;ready:boolean;error:string;notice:string;bottles:Bottle[];totals:Totals|null;sync:string;refresh:()=>Promise<void>;mutate:(operation:Mutation)=>Promise<void>;logout:()=>Promise<void>;loadBottle:(id:string)=>Promise<Bottle|null>};
+type Store={session:User|null;initializing:boolean;loading:boolean;ready:boolean;error:string;notice:string;bottles:Bottle[];totals:Totals|null;sync:string;refresh:()=>Promise<void>;mutate:(operation:Mutation)=>Promise<void>;logout:()=>Promise<void>;loadBottle:(id:string)=>Promise<Bottle|null>;loadPhoto:(id:string)=>Promise<string|null>};
 export const CellarContext=createContext<Store|null>(null);
 export const useCellar=()=>{const context=useContext(CellarContext);if(!context)throw Error('Cellar provider missing');return context;};
 export function CellarProvider({children}:{children:ReactNode}){
  const [session,setSession]=useState<User|null>(null),[initializing,setInitializing]=useState(true),[loading,setLoading]=useState(false),[ready,setReady]=useState(false);
  const [bottles,setBottles]=useState<Bottle[]>([]),[totals,setTotals]=useState<Totals|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[sync,setSync]=useState('Connecting');
  const wines=useRef(new Map<string,Wine>()),generation=useRef(0),sequence=useRef(0),inFlight=useRef<Promise<void>|null>(null);
+ const photos=useRef(new Map<string,Promise<string|null>>());
  useEffect(()=>{
   if(!auth){setInitializing(false);return;}
   return onAuthStateChanged(auth,user=>{
-   generation.current++;sequence.current++;wines.current.clear();setBottles([]);setTotals(null);setReady(false);setError('');setNotice('');setLoading(false);
+   generation.current++;sequence.current++;wines.current.clear();photos.current.clear();setBottles([]);setTotals(null);setReady(false);setError('');setNotice('');setLoading(false);
    setSession(user?.uid===adminUid?user:null);setInitializing(false);
    if(user&&user.uid!==adminUid){setError('Administrator access denied.');void signOut(auth!);}
   },()=>{setSession(null);setInitializing(false);setError('Your login could not be restored.');});
@@ -62,6 +63,7 @@ export function CellarProvider({children}:{children:ReactNode}){
  },[]);
  const logout=useCallback(async()=>{if(!auth)return;try{await signOut(auth);}catch{setError('Logout could not be completed. Please try again.');}},[]);
  const loadBottle=useCallback(async(id:string)=>db?fetchBottle(db,id,wines.current):null,[]);
+ const loadPhoto=useCallback(async(id:string)=>{if(!db)return null;let request=photos.current.get(id);if(!request){request=getDocFromServer(doc(db,'photos',id)).then(snapshot=>snapshot.exists()?snapshot.data().dataUrl as string:null).catch(failure=>{photos.current.delete(id);throw failure;});photos.current.set(id,request);}return request;},[]);
  useEffect(()=>{if(notice){const timer=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(timer);}},[notice]);
- return <CellarContext.Provider value={{session,initializing,loading,ready,error,notice,bottles,totals,sync,refresh,mutate,logout,loadBottle}}>{children}</CellarContext.Provider>;
+ return <CellarContext.Provider value={{session,initializing,loading,ready,error,notice,bottles,totals,sync,refresh,mutate,logout,loadBottle,loadPhoto}}>{children}</CellarContext.Provider>;
 }

@@ -7,6 +7,7 @@ import Login from './Login';
 import Home from './Home';
 import './style.css';
 import './phase3.css';
+import './upgrades.css';
 const Secondary = lazy(() => import('./pages'));
 const links = [{to:'/',label:'Home',icon:Wine},{to:'/cellar',label:'My Cellar',icon:LayoutGrid},{to:'/search',label:'Search',icon:Search},{to:'/statistics',label:'Statistics',icon:ChartNoAxesCombined},{to:'/history',label:'History',icon:History},{to:'/settings',label:'Settings',icon:Settings}];
 

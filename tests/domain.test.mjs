@@ -8,7 +8,7 @@ test('60 calibrated logical rack targets and a separate full-width bottom target
  assert.equal(allRackPositions().length,180);assert.equal(new Set(allRackPositions().map(locationLabel)).size,180);
  for(const p of positions){assert.ok(p.x>=0&&p.x+p.width<=rack.width);assert.ok(p.y>=0&&p.y+p.height<rack.bottom.y);}
  assert.ok(rack.bottom.x<rack.columns[0].x);assert.ok(rack.bottom.x+rack.bottom.width>rack.columns.at(-1).x+rack.columns.at(-1).width);
- assert.equal(rack.rows.length,12);assert.equal(rack.calibrationRequired,true);
+ assert.equal(rack.rows.length,12);assert.equal(rack.calibrationRequired,false);
 });
 test('bottom counts never reduce rack availability and removed bottles free positions',()=>{
  const wine={wine_type:'Red'};
