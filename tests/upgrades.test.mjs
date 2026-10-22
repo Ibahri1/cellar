@@ -1,12 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {createHash} from 'node:crypto';
-import {fileURLToPath} from 'node:url';
-import {createWorker} from 'tesseract.js';
 import {parseUsdCents,usdPrice,centsInput,statistics,allRackPositions,locationLabel} from '../src/domain.ts';
 import {rack,targetForLocation,cameraOffset} from '../src/rack.ts';
-import {extractLabel} from '../src/label.ts';
 import {validPhotoData,MAX_PHOTO_CHARS} from '../src/photos.ts';
 import {decodeWine,decodeBottle,encodeWine} from '../src/firestore.ts';
 
@@ -39,20 +35,4 @@ test('custom wine types are trimmed and included in statistics; legacy windows s
 test('photo payloads are bounded JPEG thumbnails, not arbitrary URLs or originals',async()=>{
  const data='data:image/jpeg;base64,'+(await readFile(new URL('./fixtures/test-bottle.jpg',import.meta.url))).toString('base64');
  assert.ok(validPhotoData(data));assert.ok(!validPhotoData('data:image/svg+xml,<svg/>'));assert.ok(!validPhotoData('https://example.test/photo.jpg'));assert.ok(!validPhotoData('data:image/jpeg;base64,/9j/'+ 'A'.repeat(MAX_PHOTO_CHARS)));
-});
-test('OCR extraction refuses ambiguous or low-confidence guesses',()=>{
- assert.deepEqual(extractLabel('Domaine Imaginaire\nCabernet Sauvignon\nFrance',35),{});
- assert.deepEqual(extractLabel('Cabernet Sauvignon\nFrance',90),{grape_variety:'Cabernet Sauvignon'});
- const result=extractLabel('Wine: TEST SAMPLE\nWinery: TEST ESTATE\n2021\nWine Type: Red Blend\nCountry: France\nRegion: Bordeaux\nGrape: Cabernet Sauvignon\n750 ml',90);
- assert.equal(result.name,'TEST SAMPLE');assert.equal(result.producer,'TEST ESTATE');assert.equal(result.vintage,2021);assert.equal(result.bottle_size,750);assert.equal(result.wine_type,'Red Blend');
- assert.equal(extractLabel('Established 1900',90).vintage,undefined);assert.equal(extractLabel('Vintage: 2021',90).vintage,2021);
- assert.equal(extractLabel('Established 1900\n2021\n750 ml\n375 ml',90).vintage,undefined);assert.equal(extractLabel('750 ml\n375 ml',90).bottle_size,undefined);
-});
-test('actual local OCR reads a clear fixture and handles an unreadable blank label',async()=>{
- const worker=await createWorker('eng',1,{langPath:fileURLToPath(new URL('../node_modules/@tesseract.js-data/eng/4.0.0_best_int/',import.meta.url)),cacheMethod:'none'});
- try{
-  const readable=await worker.recognize(await readFile(new URL('./fixtures/readable-label.png',import.meta.url)));const fields=extractLabel(readable.data.text,readable.data.confidence);
-  assert.equal(fields.name,'TEST SAMPLE');assert.equal(fields.producer,'TEST ESTATE');assert.equal(fields.vintage,2021);assert.equal(fields.bottle_size,750);
-  const blank=await worker.recognize(await readFile(new URL('./fixtures/blank-label.png',import.meta.url)));assert.deepEqual(extractLabel(blank.data.text,blank.data.confidence),{});
- }finally{await worker.terminate();}
 });

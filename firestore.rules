@@ -25,10 +25,11 @@ service cloud.firestore {
     }
     function validBottle(b,id) {
       return b.keys().hasAll(['id','wineId','locationType','locationKey','row','column','depth','status','personalRating','personalNotes','version','createdAt','removedAt','updatedAt','lastActivityId'])
-        && b.keys().hasOnly(['id','wineId','locationType','locationKey','row','column','depth','status','personalRating','personalNotes','version','createdAt','removedAt','updatedAt','lastActivityId','priceCents','photoId'])
+        && b.keys().hasOnly(['id','wineId','locationType','locationKey','row','column','depth','status','personalRating','personalNotes','version','createdAt','removedAt','updatedAt','lastActivityId','priceCents','photoId','purchasedFrom','presetId'])
         && b.id == id && identifier(id) && identifier(b.wineId) && identifier(b.lastActivityId)
         && location(b) && b.status in ['In Cellar','Drank','Gifted']
         && (b.personalRating == null || (b.personalRating is int && b.personalRating >= 1 && b.personalRating <= 5))
+        && text(b.get('purchasedFrom',''),200) && identifier(b.get('presetId',b.wineId))
         && text(b.personalNotes,10000) && b.version is int && b.version >= 1
         // Omitted legacy fields and explicit nulls both mean unspecified.
         && (b.get('priceCents',null) == null || (b.priceCents is int && b.priceCents >= 0 && b.priceCents <= 9007199254740991))
@@ -43,7 +44,9 @@ service cloud.firestore {
     function released(old,b) {
       return old.status != 'In Cellar' || old.locationType == 'BOTTOM'
         || (b.status == 'In Cellar' && b.locationKey == old.locationKey)
-        || !existsAfter(positionPath(old.locationKey));
+        || !existsAfter(positionPath(old.locationKey))
+        || (getAfter(positionPath(old.locationKey)).data.bottleId != old.id
+          && getAfter(bottlePath(getAfter(positionPath(old.locationKey)).data.bottleId)).data.locationKey == old.locationKey);
     }
     function linkedHistory(b,action,previous) {
       let h = getAfter(historyPath(b.lastActivityId)).data;
@@ -63,22 +66,46 @@ service cloud.firestore {
         && b.lastActivityId != old.lastActivityId && reserved(b) && released(old,b)
         && (
           // Edits preserve the entire storage/status history, including removedAt.
-          (b.diff(old).affectedKeys().hasOnly(['wineId','personalRating','personalNotes','version','updatedAt','lastActivityId','priceCents','photoId'])
+          (b.diff(old).affectedKeys().hasOnly(['wineId','personalRating','personalNotes','version','updatedAt','lastActivityId','priceCents','photoId','purchasedFrom','presetId'])
             && linkedHistory(b,'Edited',old.status == 'In Cellar' ? old.locationKey : null))
           || (old.status == 'In Cellar' && b.status == 'In Cellar' && b.locationKey != old.locationKey
             && b.diff(old).affectedKeys().hasOnly(['locationType','locationKey','row','column','depth','version','updatedAt','lastActivityId'])
-            && linkedHistory(b,'Moved',old.locationKey))
+            && (getAfter(historyPath(b.lastActivityId)).data.action in ['Moved','Swapped','Restored'] && linkedHistory(b,getAfter(historyPath(b.lastActivityId)).data.action,old.locationKey)))
           || (old.status == 'In Cellar' && b.status in ['Drank','Gifted'] && b.removedAt == request.time
             && b.diff(old).affectedKeys().hasOnly(['status','removedAt','version','updatedAt','lastActivityId'])
             && linkedHistory(b,b.status,old.locationKey) && removedOutcome(b))
         );
     }
+    function statePath() { return /databases/$(database)/documents/cellarState/current; }
+    function coordinated(b) {
+      let s = getAfter(statePath()).data;
+      let h = getAfter(historyPath(b.lastActivityId)).data;
+      return s.revision == get(statePath()).data.revision + 1 && b.id in s.changeIds
+        && s.layout.get(b.id,null) == (b.status == 'In Cellar' ? b.locationKey : null)
+        && (h.action == 'Edited' || getAfter(/databases/$(database)/documents/cellarChanges/$(s.lastChangeId)).data.revision == s.revision)
+        && (get(statePath()).data.lock == null || h.action == 'Restored')
+        && (h.action != 'Restored' || (get(statePath()).data.lock != null
+          && restoreStep(b,get(statePath()).data.lock)));
+    }
+    function restoreStep(b,id) {
+      let job = get(/databases/$(database)/documents/cellarRestores/$(id)).data;
+      return job.status == 'Running' && job.steps[job.index].id == b.id && job.steps[job.index].to == b.locationKey;
+    }
+    function deltaValue(change,s,i) {
+      let id = s.changeIds[i];
+      return change.get(id,null) == s.layout.get(id,null);
+    }
+    function stateBottle(s,i) {
+      let id = s.changeIds[i];
+      let b = getAfter(bottlePath(id)).data;
+      return b.updatedAt == request.time && s.layout.get(id,null) == (b.status == 'In Cellar' ? b.locationKey : null);
+    }
     match /wines/{id} {
       allow read: if admin();
       allow create: if admin()
         && request.resource.data.keys().hasAll(['id','name','producer','vintage','wineType','country','region','grapeVariety','bottleSize','tastingNotes','imageUrl','createdAt'])
-        && request.resource.data.keys().hasOnly(['id','name','producer','vintage','wineType','country','region','grapeVariety','bottleSize','tastingNotes','drinkingWindowStart','drinkingWindowEnd','imageUrl','createdAt'])
-        && request.resource.data.id == id && identifier(id)
+        && request.resource.data.keys().hasOnly(['id','name','producer','vintage','wineType','country','region','grapeVariety','bottleSize','tastingNotes','drinkingWindowStart','drinkingWindowEnd','imageUrl','createdAt','presetId'])
+        && request.resource.data.id == id && identifier(id) && identifier(request.resource.data.get('presetId',id))
         && text(request.resource.data.name,200) && request.resource.data.name.matches('.*[^ \\t\\r\\n].*')
         && text(request.resource.data.producer,200) && year(request.resource.data.vintage)
         && text(request.resource.data.wineType,160) && request.resource.data.wineType.matches('.*[^ \\t\\r\\n].*')
@@ -96,8 +123,8 @@ service cloud.firestore {
       allow create: if admin() && validBottle(request.resource.data,id)
         && request.resource.data.version == 1 && request.resource.data.status == 'In Cellar'
         && request.resource.data.createdAt == request.time && reserved(request.resource.data)
-        && linkedHistory(request.resource.data,'Added',null);
-      allow update: if admin() && validBottle(request.resource.data,id) && validUpdate(resource.data,request.resource.data);
+        && coordinated(request.resource.data) && linkedHistory(request.resource.data,'Added',null);
+      allow update: if admin() && validBottle(request.resource.data,id) && coordinated(request.resource.data) && validUpdate(resource.data,request.resource.data);
       allow delete: if false;
     }
     match /positions/{id} {
@@ -109,7 +136,11 @@ service cloud.firestore {
         && getAfter(bottlePath(request.resource.data.bottleId)).data.locationKey == id
         && getAfter(bottlePath(request.resource.data.bottleId)).data.status == 'In Cellar';
       // Occupied reservations cannot be overwritten, even in an atomic batch.
-      allow update: if false;
+      allow update: if admin() && request.resource.data.keys().hasOnly(['id','bottleId']) && request.resource.data.id == id
+        && request.resource.data.bottleId != resource.data.bottleId
+        && getAfter(bottlePath(resource.data.bottleId)).data.locationKey != id
+        && getAfter(bottlePath(request.resource.data.bottleId)).data.locationKey == id
+        && getAfter(bottlePath(request.resource.data.bottleId)).data.status == 'In Cellar';
       allow delete: if admin() && (
         getAfter(bottlePath(resource.data.bottleId)).data.status != 'In Cellar'
         || getAfter(bottlePath(resource.data.bottleId)).data.locationKey != id);
@@ -120,7 +151,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasAll(['id','bottleId','wineId','wineName','vintage','action','previousLocation','newLocation','bottleVersion','requestHash','createdAt'])
         && request.resource.data.keys().hasOnly(['id','bottleId','wineId','wineName','vintage','action','previousLocation','newLocation','bottleVersion','requestHash','createdAt'])
         && request.resource.data.id == id && identifier(request.resource.data.bottleId)
-        && request.resource.data.action in ['Added','Edited','Moved','Drank','Gifted']
+        && request.resource.data.action in ['Added','Edited','Moved','Swapped','Restored','Drank','Gifted']
         && request.resource.data.requestHash is string && request.resource.data.requestHash.matches('^[0-9a-f]{64}$')
         && request.resource.data.createdAt == request.time
         && getAfter(bottlePath(request.resource.data.bottleId)).data.lastActivityId == id
@@ -159,6 +190,86 @@ service cloud.firestore {
         && request.resource.data.rackRows == 12 && request.resource.data.rackColumns == 5
         && request.resource.data.rackDepth == 3 && request.resource.data.rackCapacity == 180;
       allow update,delete: if false;
+    }
+    match /winePresets/{id} {
+      allow read: if admin();
+      allow create,update: if admin() && identifier(id)
+        && request.resource.data.keys().hasAll(['id','defaultPriceCents','photoId','photoConfigured','updatedAt'])
+        && request.resource.data.keys().hasOnly(['id','defaultPriceCents','photoId','photoConfigured','updatedAt'])
+        && request.resource.data.id == id && existsAfter(winePath(id))
+        && (request.resource.data.defaultPriceCents == null || (request.resource.data.defaultPriceCents is int && request.resource.data.defaultPriceCents >= 0 && request.resource.data.defaultPriceCents <= 9007199254740991))
+        && request.resource.data.photoConfigured is bool
+        && (request.resource.data.photoId == null || (identifier(request.resource.data.photoId) && existsAfter(photoPath(request.resource.data.photoId))))
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    match /cellarState/{id} {
+      allow read: if admin();
+      allow create: if admin() && id == 'current' && request.resource.data.keys().hasOnly(['revision','layout','lock','changeIds','updatedAt'])
+        && request.resource.data.revision == 0 && request.resource.data.lock == null && request.resource.data.changeIds == []
+        && request.resource.data.layout is map && request.resource.data.updatedAt == request.time;
+      allow update: if admin() && id == 'current' && request.resource.data.layout is map
+        && request.resource.data.keys().hasOnly(['revision','layout','lock','changeIds','lastChangeId','updatedAt'])
+        && request.resource.data.updatedAt == request.time && (
+          (request.resource.data.revision == resource.data.revision + 1
+            && request.resource.data.changeIds is list && request.resource.data.changeIds.size() >= 1 && request.resource.data.changeIds.size() <= 3
+            && request.resource.data.layout.diff(resource.data.layout).affectedKeys().hasOnly(request.resource.data.changeIds)
+            && stateBottle(request.resource.data,0)
+            && (request.resource.data.changeIds.size() < 2 || stateBottle(request.resource.data,1))
+            && (request.resource.data.changeIds.size() < 3 || stateBottle(request.resource.data,2))
+            && (request.resource.data.lock == resource.data.lock || (resource.data.lock != null && request.resource.data.lock == null && getAfter(/databases/$(database)/documents/cellarRestores/$(resource.data.lock)).data.status == 'Complete')))
+          || (resource.data.lock == null && request.resource.data.lock is string
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock','updatedAt'])
+            && getAfter(/databases/$(database)/documents/cellarRestores/$(request.resource.data.lock)).data.status == 'Running')
+        );
+      allow delete: if false;
+    }
+    match /cellarSnapshots/{id} {
+      allow read: if admin();
+      allow create: if admin() && identifier(id) && request.resource.data.keys().hasAll(['id','name','type','schemaVersion','layout','revision','createdAt'])
+        && request.resource.data.keys().hasOnly(['id','name','type','schemaVersion','layout','revision','createdAt'])
+        && request.resource.data.id == id && text(request.resource.data.name,160) && request.resource.data.name.size() > 0
+        && request.resource.data.type in ['Manual','Automatic','Safety'] && request.resource.data.schemaVersion == 1
+        && request.resource.data.createdAt == request.time && request.resource.data.layout == getAfter(statePath()).data.layout
+        && request.resource.data.revision == getAfter(statePath()).data.revision;
+      allow update,delete: if false;
+    }
+    match /cellarChanges/{id} {
+      allow read: if admin();
+      allow create: if admin() && request.resource.data.keys().hasAll(['id','groupId','revision','changes','createdAt'])
+        && request.resource.data.keys().hasOnly(['id','groupId','revision','changes','createdAt'])
+        && request.resource.data.id == id && identifier(request.resource.data.groupId)
+        && request.resource.data.createdAt == request.time && request.resource.data.revision == getAfter(statePath()).data.revision
+        && getAfter(statePath()).data.lastChangeId == id && request.resource.data.changes is map
+        && request.resource.data.changes.size() == getAfter(statePath()).data.changeIds.size()
+        && request.resource.data.changes.keys().hasOnly(getAfter(statePath()).data.changeIds)
+        && deltaValue(request.resource.data.changes,getAfter(statePath()).data,0)
+        && (getAfter(statePath()).data.changeIds.size() < 2 || deltaValue(request.resource.data.changes,getAfter(statePath()).data,1))
+        && (getAfter(statePath()).data.changeIds.size() < 3 || deltaValue(request.resource.data.changes,getAfter(statePath()).data,2))
+        && getAfter(/databases/$(database)/documents/cellarSnapshots/$(request.resource.data.groupId)).data.type == 'Automatic'
+        && request.time <= getAfter(/databases/$(database)/documents/cellarSnapshots/$(request.resource.data.groupId)).data.createdAt + duration.value(5,'m');
+      allow update,delete: if false;
+    }
+    match /cellarRestores/{id} {
+      allow read: if admin();
+      allow create: if admin() && identifier(id)
+        && request.resource.data.keys().hasAll(['id','safetyId','steps','index','status','createdAt','updatedAt'])
+        && request.resource.data.keys().hasOnly(['id','safetyId','steps','index','status','createdAt','updatedAt'])
+        && request.resource.data.id == id && request.resource.data.status == 'Running' && request.resource.data.index == 0
+        && request.resource.data.steps is list && request.resource.data.steps.size() > 0 && request.resource.data.steps.size() <= 10000
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+        && getAfter(statePath()).data.lock == id
+        // Must already exist BEFORE this transaction: a durable safety backup.
+        && get(/databases/$(database)/documents/cellarSnapshots/$(request.resource.data.safetyId)).data.type == 'Safety'
+        && get(/databases/$(database)/documents/cellarSnapshots/$(request.resource.data.safetyId)).data.revision == get(statePath()).data.revision;
+      allow update: if admin() && resource.data.status == 'Running' && get(statePath()).data.lock == id
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['index','status','updatedAt'])
+        && request.resource.data.index == resource.data.index + 1 && request.resource.data.index <= resource.data.steps.size()
+        && request.resource.data.status == (request.resource.data.index == resource.data.steps.size() ? 'Complete' : 'Running')
+        && request.resource.data.updatedAt == request.time
+        && getAfter(bottlePath(resource.data.steps[resource.data.index].id)).data.locationKey == resource.data.steps[resource.data.index].to
+        && getAfter(bottlePath(resource.data.steps[resource.data.index].id)).data.updatedAt == request.time;
+      allow delete: if false;
     }
     match /{document=**} { allow read,write: if false; }
   }

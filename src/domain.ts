@@ -2,13 +2,13 @@ export const wineTypes = ['Red','White','Rosé','Sparkling','Dessert','Fortified
 export type Wine = {
   id: string; name: string; producer: string; vintage: number|null; wine_type: string;
   country: string; region: string; grape_variety: string; bottle_size: number;
-  tasting_notes: string; image_url: string|null;
+  tasting_notes: string; image_url: string|null; default_price_cents?:number|null; shared_photo_id?:string|null; preset_configured?:boolean;preset_id?:string;created_at?:string;
 };
 export type Placement = {location_type:'RACK'|'BOTTOM';row_number:number|null;column_number:number|null;depth_number:number|null};
 export type Bottle = Placement & {
   id:string; wine_id:string; wine:Wine; status:'In Cellar'|'Drank'|'Gifted'; version:number;
   personal_rating:number|null;personal_notes:string;created_at:string;removed_at:string|null;
-  price_cents?:number|null;photo_id?:string|null;
+  price_cents?:number|null;photo_id?:string|null;purchased_from?:string;preset_id?:string;
 };
 export type Activity = {id:string;bottle_id:string;wine_name:string;vintage:number|null;action:string;previous_location:string|null;new_location:string|null;created_at:string};
 export const bottom: Placement = {location_type:'BOTTOM',row_number:null,column_number:null,depth_number:null};
@@ -24,4 +24,4 @@ export function parseUsdCents(value:string):number|null{
 }
 export function centsInput(cents:number|null|undefined){if(cents==null)return '';const value=BigInt(cents);return `${value/100n}.${String(value%100n).padStart(2,'0')}`;}
 export function usdPrice(cents:number|null|undefined){if(cents==null)return 'Not specified';const value=BigInt(cents);return `$${(value/100n).toLocaleString('en-US')}.${String(value%100n).padStart(2,'0')}`;}
-export function safeError(error:unknown){const e=error as {code?:string};if(e?.code==='already-exists')return 'That rack position was just occupied. Refresh and select another position.';if(e?.code==='aborted')return 'This bottle changed on another device. Close this editor and reopen the latest record.';if(e?.code==='permission-denied'||e?.code==='unauthenticated')return 'Access was denied. Verify your administrator login and Firestore rules.';if(e?.code==='not-found')return 'This bottle or its wine is no longer available. Refresh your inventory.';if(e?.code==='invalid-argument'||e?.code==='failed-precondition')return 'Check the wine details, storage positions and database setup, then retry.';if(e?.code==='resource-exhausted')return 'Firebase usage limits have been reached. Try again when your free quota resets.';return 'The request could not be confirmed. Check your connection and retry; the same unchanged request will not create duplicate bottles.';}
+export function safeError(error:unknown){const e=error as {code?:string};if(e?.code==='cellar-locked')return 'A restoration is in progress. Open Cellar History and resume it before changing inventory.';if(e?.code==='already-exists')return 'That rack position was just occupied. Refresh and select another position.';if(e?.code==='aborted')return 'This bottle changed on another device. Close this editor and reopen the latest record.';if(e?.code==='permission-denied'||e?.code==='unauthenticated')return 'Access was denied. Verify your administrator login and Firestore rules.';if(e?.code==='not-found')return 'This bottle or its wine is no longer available. Refresh your inventory.';if(e?.code==='invalid-argument'||e?.code==='failed-precondition')return 'Check the wine details, storage positions and database setup, then retry.';if(e?.code==='resource-exhausted')return 'Firebase usage limits have been reached. Try again when your free quota resets.';return 'The request could not be confirmed. Check your connection and retry; the same unchanged request will not create duplicate bottles.';}

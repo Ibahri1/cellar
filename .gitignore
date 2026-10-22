@@ -7,4 +7,3 @@ dist/
 .firebase/
 *-debug.log
 ui-debug.log
-public/ocr/

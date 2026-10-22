@@ -1,11 +1,64 @@
 {
   "indexes": [
-    {"collectionGroup":"activityHistory","queryScope":"COLLECTION","fields":[{"fieldPath":"action","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}]}
+    {
+      "collectionGroup": "activityHistory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "action",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ]
+    }
   ],
   "fieldOverrides": [
-    {"collectionGroup":"photos","fieldPath":"dataUrl","indexes":[]},
-    {"collectionGroup":"bottles","fieldPath":"personalNotes","indexes":[]},
-    {"collectionGroup":"wines","fieldPath":"tastingNotes","indexes":[]},
-    {"collectionGroup":"activityHistory","fieldPath":"requestHash","indexes":[]}
+    {
+      "collectionGroup": "photos",
+      "fieldPath": "dataUrl",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "bottles",
+      "fieldPath": "personalNotes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "wines",
+      "fieldPath": "tastingNotes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "activityHistory",
+      "fieldPath": "requestHash",
+      "indexes": []
+    },
+    {
+      "indexes": [],
+      "fieldPath": "layout",
+      "collectionGroup": "cellarState"
+    },
+    {
+      "indexes": [],
+      "fieldPath": "layout",
+      "collectionGroup": "cellarSnapshots"
+    },
+    {
+      "indexes": [],
+      "fieldPath": "changes",
+      "collectionGroup": "cellarChanges"
+    },
+    {
+      "indexes": [],
+      "fieldPath": "steps",
+      "collectionGroup": "cellarRestores"
+    }
   ]
 }

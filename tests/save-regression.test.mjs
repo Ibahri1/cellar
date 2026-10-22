@@ -5,6 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {initializeTestEnvironment,assertFails} from '@firebase/rules-unit-testing';
 import {doc,getDoc,setDoc,runTransaction,serverTimestamp,Timestamp} from 'firebase/firestore';
+import {ensureLayout,prepareChange,commitChange} from '../src/cellar-history.ts';
 import {saveMutation,encodeWine} from '../src/firestore.ts';
 
 let env,db;
@@ -26,11 +27,13 @@ function operation(extra={}){return {action:'add',requestId:randomUUID(),payload
 // Mirror the three writes to isolate an individual rule condition. The existing
 // wine is read in the transaction, so its read-version precondition is checked.
 async function direct({optional={},bottle={},history={},position={},omitHistory=false,omitReservation=false}={}){
- const id=randomUUID(),historyId=randomUUID();
+ const id=randomUUID(),historyId=randomUUID();await ensureLayout(db);
  await runTransaction(db,async transaction=>{
+  const prepared=await prepareChange(transaction,db);
   const saved=(await transaction.get(doc(db,'wines',wine.id))).data();
   const next={id,wineId:wine.id,locationType:'RACK',row:7,column:2,depth:3,locationKey:'R7-C2-D3',status:'In Cellar',version:1,personalRating:null,personalNotes:'',removedAt:null,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),lastActivityId:historyId,...optional,...bottle};
   transaction.set(doc(db,'bottles',id),next);
+  commitChange(transaction,db,prepared,id,{...prepared.state.layout,[id]:next.locationKey},[id],true);
   if(!omitReservation)transaction.set(doc(db,'positions','R7-C2-D3'),{id:'R7-C2-D3',bottleId:id,...position});
   if(!omitHistory)transaction.set(doc(db,'activityHistory',historyId),{id:historyId,bottleId:id,wineId:wine.id,wineName:saved.name,vintage:saved.vintage,action:'Added',bottleVersion:1,previousLocation:null,newLocation:'R7-C2-D3',requestHash:'a'.repeat(64),createdAt:serverTimestamp(),...history});
  });
@@ -83,6 +86,6 @@ test('all reservation, history, timestamp and optional-field failures still reje
   {history:{previousLocation:'R1-C1-D1'}},{history:{newLocation:'R7-C2-D2'}},
   {history:{createdAt:old}},{history:{requestHash:'invalid'}},
   {optional:{priceCents:-1}},{optional:{priceCents:19.99}},
-  {optional:{photoId:'missing-photo'}},{optional:{photoId:123}},{optional:{unexpected:true}}
+  {optional:{photoId:'missing-photo'}},{optional:{photoId:123}},{optional:{unexpected:true}},{optional:{purchasedFrom:123}},{optional:{purchasedFrom:'X'.repeat(201)}},{optional:{presetId:123}}
  ]){await assertFails(direct(change));assert.equal((await getDoc(doc(db,'positions','R7-C2-D3'))).exists(),false);}
 });

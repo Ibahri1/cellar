@@ -1,200 +1,140 @@
-# BAHRI | Private Wine Cellar — Firebase / GitHub Pages
+# BAHRI | Private Wine Cellar
 
-The existing cellar website uses the official Firebase JavaScript SDK, Firebase Authentication and Cloud Firestore. It is designed for **Firebase Spark** and remains a static GitHub Pages site at **https://ibahri1.github.io/cellar/**, with source intended for **https://github.com/Ibahri1/cellar**. These upgrades change local source only. No external account, repository, DNS record, cloud database or deployment was modified.
+An existing React / TypeScript / Vite / Tailwind website using Firebase Authentication, Cloud Firestore and GitHub Pages. Repository: https://github.com/Ibahri1/cellar. Website: https://ibahri1.github.io/cellar/. Firebase project: `cellar-784b2` (Spark). These upgrades are local only: no push, cloud writes, deployment, credential changes or destructive migration was performed.
 
-Landscape layouts, navigation, login, inventory, search and the dark/gold styling are preserved. `public/cellar.png` is the exact new supplied image, verified by SHA-256, with twelve visible rack rows and bottom storage. `src/rack.ts` contains individually calibrated row bands and column widths in the image's 1536 × 1024 coordinate space. The same geometry drives clicking and camera targeting; existing R1-C1-D1 through R12-C5-D3 IDs and BOTTOM assignments are unchanged.
+## Implemented upgrades
 
-## BAHRI branding
+- Compact mobile landscape layouts with a hamburger menu for Home, My Cellar, Search, Statistics, Activity History, Cellar History and Settings. The bottom navigation is removed. Forms use three columns, internal scrolling, 44px save controls and VisualViewport height/offset handling. Desktop styling is retained.
+- A native top-layer rotation dialog blocks portrait interaction on touch devices, with the requested message and phone/rotation icons. Rotation preserves mounted pages, forms and selections. Tall ordinary desktop windows are not restricted. The UI fixture offers an explicit `device=phone` switch for simulated orientation testing; production relies on touch capability and physical screen orientation, with media-query fallback.
+- Save validation is explicit rather than relying on native HTML validation to dispatch the submit handler. Required identification fields, vintage, quantity, price and positions produce visible errors. Photo processing and saving have visible busy states. A synchronous submission guard and stable request IDs prevent duplicate saves. Failures retain the draft. Success appears only after a confirmed database transaction.
+- Optional **Purchased From** on each bottle; trimmed and limited to 200 characters, editable, persisted and shown only when populated.
+- Producer precedes Wine Name in add/edit forms. Presets sort by locale-aware, case-insensitive Producer, Wine Name and ascending vintage (non-vintage first; missing producers last).
+- The six standard bottle sizes are exactly **187mL, 375mL, 750mL, 1L, 1.5L, 3L**. A shared formatter preserves numeric mL storage. An existing uncommon size is retained and shown as one explicitly labeled existing-size option; it is never silently converted.
+- Preset default prices populate additions. A successful addition updates that default atomically; canceling or an unrelated bottle edit does not. Prices remain integer USD cents and existing bottle prices are never retroactively changed.
+- Preset photos are shared by stable preset IDs. Upload, replacement and removal require confirmation when changing an existing wine's shared photo. Every linked bottle uses the latest configured shared photo, including bottles that have older individual photo references. Old photo documents are retained. Legacy photos retain their individual display until a shared photo is explicitly configured; ambiguous legacy photos are not guessed or silently promoted.
+- **Swap Positions** supports a searchable bottle list and a clickable cellar image with depth selection. Empty destinations offer Move Bottle. Confirmation identifies both bottles and before/after locations. Rack/rack and rack/BOTTOM changes are atomic, version checked and recorded. BOTTOM/BOTTOM swaps have no meaningful coordinate change and are rejected.
+- Rack depth previews show Producer, Wine Name and Vintage, associated with their depth. Missing producer/year information is labeled honestly.
+- Label scanning, OCR utilities/UI, Tesseract dependencies, generated engine/language assets, build preparation and OCR-only fixtures/styles are removed. Normal camera/photo upload, compression, previews and private Firestore thumbnails remain.
+- **Cellar History** provides named manual snapshots, grouped automatic snapshots, pagination, read-only previews, conflict/skipped-bottle reports and confirmed position-only restoration with a committed safety backup and resumable progress.
+- The original BAHRI artwork, cellar image, rack geometry, authentication, prices, activity history, Show in Cellar replay and 30-second inactivity screensaver remain. Forms, active operations, replay and the portrait gate pause the screensaver; the inline snapshot naming form pauses only when focused.
 
-`public/bahri-logo.png` is an exact copy of the official 1774×887 artwork (SHA-256 `E6122D324977E3EEB3855463BC717333F9A851CB60E7280C6F72F3270555D963`). It is not regenerated, cropped or re-encoded. `src/BrandLogo.tsx` reuses that single file for sidebar, mobile dashboard/More, page/bottle headers, footers and loading states. The original functional wine/navigation icons and ordinary cellar wording remain.
+## Save-button investigation and limits of the finding
 
-The login page uses this same file as its CSS background, scaled proportionally with a matching layout spacer that keeps the form below the artwork. Desktop, phone portrait/landscape and tablet layouts allow vertical scrolling on short screens; no `cover` cropping is used. Authentication code and behavior are unchanged.
+The inspected form previously used native `required` validation with no application-level invalid handler. That can prevent `onSubmit` from running while an offscreen required field is invalid, which appears to be an unresponsive save. Mobile forms also placed a sticky footer inside a long scrolling form and reserved space for fixed bottom navigation. The new form has explicit validation and a separate scrolling field area above a fixed flex footer, and the bottom bar is removed.
 
-The favicon and home-screen PNGs (`bahri-mark-64.png`, `-180.png`, `-192.png`, `-512.png`) are deterministic crops/resizes of the original gold grape ornament at source rectangle x=822, y=692, width=126, height=126. They introduce no new illustration. `site.webmanifest` sets the BAHRI name and relative start/icon paths; it adds no service worker or offline functionality. The document title is **BAHRI | Private Wine Cellar**. Open Graph metadata uses the supplied public GitHub Pages address and the full logo, without private inventory information.
+Browser checks demonstrated visible validation, a tappable save button, failed-save recovery, retained form values across rotation, and a visible 44px save button at both 844x390 and a shortened 844x230 viewport. This establishes fixes for those observed failure paths. It does **not** conclusively reproduce every intermittent failure on the user's physical phone. Real iOS/Android keyboards, camera permissions and the hosted administrator session still need device testing after authorized deployment. No live Firebase save is claimed as tested.
 
-All runtime branding references use Vite's base URL; HTML icon/manifest references use `%BASE_URL%`, and manifest paths are relative. No Firebase, rules, database, inventory, image-scanning, rack geometry or original cellar-image changes are needed. Deploy only the frontend when authorized. Existing browser/home-screen/social-preview caches may require a refresh or removing/re-adding the home-screen shortcut. If moving to a custom domain later, update the `og:url` and absolute `og:image` values in `index.html`.
+## Firestore schema and security
 
-**Files in this branding update:** added `src/BrandLogo.tsx`, `src/branding.css`, `public/bahri-logo.png`, four `public/bahri-mark-*.png` icons and `public/site.webmanifest`; updated `index.html`, `src/Login.tsx`, `src/main.tsx`, `src/Home.tsx`, `src/pages.tsx`, `src/BottleManager.tsx`, `src/MobileShell.tsx`, `tests/ui.tsx`, `tests/ui.html` and this README. No dependencies were added.
+Existing collections remain: `wines`, `bottles`, `positions`, `activityHistory`, `outcomes`, `photos`, `settings`. Authentication and the explicit administrator UID restriction remain unchanged. No anonymous/private-data access or permissive wildcard was added.
 
-## Upgrades
+| Collection | New or changed fields / purpose |
+| --- | --- |
+| `bottles` | Optional `purchasedFrom`, optional `presetId` (legacy fallback: `wineId`). Existing cents, individual photo IDs and all other metadata are preserved. |
+| `wines` | Optional immutable `presetId` retains preset identity when an edited wine is copied, matching the existing immutable-wine architecture. |
+| `winePresets/{presetId}` | `id`, nullable integer `defaultPriceCents`, nullable `photoId`, `photoConfigured`, server `updatedAt`. Shared defaults are separate from immutable wine details and per-bottle prices. |
+| `cellarState/current` | `revision`, compact active bottle-ID-to-location `layout`, nullable restore `lock`, `changeIds`, `lastChangeId`, server `updatedAt`. Serializes occupancy changes and coordinates restores. |
+| `cellarSnapshots/{id}` | Immutable `id`, `name`, `type` (Manual, Automatic, Safety), `schemaVersion: 1`, compact `layout`, `revision`, server `createdAt`. No photos or wine documents are duplicated. |
+| `cellarChanges/{requestId}` | Immutable automatic-group `groupId`, `revision`, compact changed bottle locations (null for removal), `createdAt`. Committed with the inventory operation. |
+| `cellarRestores/{id}` | Immutable restore plan and `safetyId`; validated sequential `index`, Running/Complete status and server timestamps. A persisted recovery job, not a browser-only timer. |
+| `activityHistory` | Adds `Swapped` and `Restored` actions; existing records remain immutable and readable. |
 
-### Mobile experience
+The position-only schema maps each active bottle ID to its rack key or BOTTOM. Under schema version 1, the rack is exactly 12x5x3; every omitted rack address is empty. BOTTOM is represented by every bottle ID mapped to BOTTOM, without invented individual physical coordinates.
 
-Phones now work in portrait and landscape, with an independent dark/gold layout. Portrait tablets up to 900 px wide also use it. Landscape screens above 1023 px and ordinary desktop widths retain the existing design. The phone landscape breakpoint additionally covers widths up to 1023 px when the height is at most 500 px; it does not use browser identity detection.
+Rules validate optional fields, photo existence, preset prices, reservation releases/reassignment, bottle versions, timestamps and linked history. Every inventory mutation advances the shared revision; occupancy changes must have a matching immutable change record. Journal values must match the committed layout. Restore writes must match the current locked plan step. Snapshots, journal entries, old history and photos cannot be updated or deleted. Occupied reservations can be reassigned only when both affected bottle records prove the coordinated move.
 
-- Fixed safe-area-aware **Cellar / My Wines / Add Bottle / History / More** navigation, with a raised Add button and content space reserved above the navigation. More opens Statistics, Settings, Search and sign-out.
-- A contained cellar viewer with pointer-based pinch zoom, drag/pan, double-tap zoom, accessible zoom buttons and Reset View. Zoom is bounded to 1–8×. The unchanged image and `src/rack.ts` map drive all selections. A Row/Column/Depth picker complements the image; swipe down on the rack sheet's handle to dismiss it. BOTTOM remains shared storage.
-- Individual bottle cards with photos or a placeholder, vintage, custom wine type, location, status and optional price. Existing search/filter/sort logic is reused; the mobile inventory shows active bottles, with removed bottles available through History. It does not fetch an extra archived collection for a status filter.
-- Full-screen mobile bottle details and forms, a prominent Show in Cellar action, large photo previews, camera/OCR actions near the start of Add Bottle, 16 px inputs, numeric price/vintage keyboards, sticky Save and error messages. Saves retain the existing atomic transactions and request IDs; a synchronous submission lock prevents rapid repeated submits.
-- Mobile editors stay mounted outside route content, preserving drafts across in-app navigation, browser hash Back and orientation changes. Closing a changed form asks whether to keep editing or discard. Reload/close warnings are best-effort browser behavior, not durable draft storage; keep the tab open until saving. Drafts/photos are not written to localStorage.
-- Mobile replay uses the same targeting graphics and map, bounds camera movement to the image, and keeps its identification/Return controls above navigation. Middle and Back remain explicitly labeled. Skip and reduced motion are supported; BOTTOM shows the complete shared area.
-- History uses a readable timeline over the existing pagination/listener. Statistics and Settings reflow into touch-friendly cards/rows. Private photo loading and lazy OCR remain unchanged. VisualViewport sizing keeps modal controls within the visible keyboard area where the browser reports it; browser zoom remains allowed.
+No new composite query indexes are required. `firestore.indexes.json` retains the existing activity-history index and adds indexing exemptions for `cellarState.layout`, `cellarSnapshots.layout`, `cellarChanges.changes` and `cellarRestores.steps`. Existing thumbnail/note exemptions are retained.
 
-**No new dependencies or Firebase/schema/rules changes were made for the mobile overhaul.** The image, rack constants, authentication, Firestore transactions, store, indexes and rules are unchanged. No cloud operations or deployment were performed. Only a frontend deployment is needed when authorized.
+### Compatibility / initialization
 
-**Verification:** 13 domain/OCR/mobile geometry tests and 23 Firebase emulator checks pass. The production build includes TypeScript checks. Browser QA used simulated viewports: 375×667, 390×844, 430×932, 360×800, 768×1024, 1440×900 and the corresponding phone/tablet landscape sizes. Inventory had no horizontal overflow. All 60 rack selections, Front/Middle/Back and BOTTOM, quick picker, double-tap zoom, mouse drag/pan, swipe dismissal, navigation, filtering, replay/Skip/Return/reduced motion, draft retention, failed-save recovery, image upload/preview/removal and readable/blank OCR were exercised using labeled synthetic fixtures. Home and inventory screenshots at 1440×900 matched their pre-change desktop screenshots byte-for-byte.
+No production migration script is necessary or provided. The first upgraded layout operation lazily creates the new coordination document from confirmed active bottle records, rechecking those records in a transaction. It does not rewrite existing bottles, positions, photographs or history. Old bottles without new optional fields remain readable and editable. Existing uncommon bottle capacities remain unchanged.
 
-The real login layout and password-visibility control were checked without submitting credentials. Login/logout, add/edit/move/Drank/Gifted, reservations, history and synchronization pass in local emulators. **Not real-device/live-cloud tested:** Safari/Android behavior, two-finger hardware gestures, camera capture/permissions, software-keyboard/safe-area behavior, live login/writes, cross-device cloud synchronization or Pages deployment. Pinch anchoring/bounds are covered by pure geometry tests; the browser's pan/double-click checks are mouse-driven. UI save failures in the synthetic fixture are intentional and do not write to Firebase.
+Old browser clients cannot perform uncoordinated inventory writes under the new rules. Deploy rules and frontend together during a quiet period and refresh all open devices afterwards. Do not run the old client during a restoration, and do not blindly roll back to rules that lack the new fields and coordination checks. No cloud initialization was executed during development.
 
-#### Test on your phone
+## Automatic grouping and restore protocol
 
-From this project folder, using the existing `.env`, run:
+Automatic snapshots use fixed five-minute client-clock buckets. The first occupancy change in a bucket commits one immutable full-layout base; later changes commit immutable revision deltas to that logical snapshot. The rules also bound appends to five minutes after base creation. There is no delayed browser flush: each completed change already has a durable recovery record, even if the browser closes immediately. Device clocks should be accurate. Manual and safety snapshots are independent of automatic groups.
 
-```sh
-npm run dev -- --host 0.0.0.0
-```
+A preview compares the selected layout to current active inventory and its revision. Missing/consumed/gifted references are skipped and identified as a partial restoration. Newer bottles are preserved. An unrelated occupant at a required destination blocks confirmation; move it explicitly and preview again. No bottle is recreated or deleted.
 
-On the same trusted Wi-Fi, open `http://YOUR_PC_LAN_IP:5173/` on your phone. Allow the development server through your private-network firewall if needed. Use `/tests/ui.html?fixtures=1#/` to explore labeled synthetic inventory without logging in or writing records; this test page is excluded from the production build. Use the root URL to test the actual existing administrator login. Local LAN camera behavior varies; use the HTTPS Pages site after an authorized frontend deployment to verify camera capture on real Safari/Chrome. Stop Vite with Ctrl+C afterwards. These instructions do not change Firebase configuration, expose a password or deploy anything.
+Before applying a restore, a separate immutable **Before Restore** snapshot is durably committed. A second transaction verifies its revision and acquires the restore lock. The persisted plan then moves one bottle per atomic step, recording history and automatic recovery changes. Cycles explicitly stage involved bottles in BOTTOM before placing them; unrelated bottles are never moved. Each step keeps bottle records and reservations consistent and uses a stable request ID. Other inventory writes are blocked during the job. The final step releases the lock.
 
-**Files changed for mobile:** `index.html`, `package.json`, `src/main.tsx`, `src/Home.tsx`, `src/pages.tsx`, `src/BottleManager.tsx`, `src/CellarReplay.tsx`, `src/PhotoEditor.tsx`, `tests/ui.tsx` and this README. Added `src/mobile.ts`, `src/mobile-editor.ts`, `src/MobileShell.tsx`, `src/CellarViewer.tsx`, `src/viewer.ts`, `src/mobile.css` and `tests/mobile.test.mjs`. The original desktop stylesheets are untouched.
+If interrupted, open **Cellar History**, refresh and choose **Resume restoration**. Progress survives refresh/device changes. Do not remove the lock or modify job documents manually. The safety snapshot remains available after completion. Restoring a safety snapshot also creates another safety backup first. The protocol avoids large unsafe batches and the rules' per-operation access budget; a twelve-bottle restoration and interrupted cycles are emulator tested.
 
-- **Show in Cellar:** active bottle details open a roughly three-second column/row tracking and camera zoom replay. Skip Animation, Return to Full Cellar and reduced-motion support are included. A bottle-ID hash URL survives refresh and uses its current saved location. Middle/Back have explicit depth indicators and share the visible rack target; BOTTOM highlights the whole shared area.
-- **Bottle Price ($):** optional individual `bottles.priceCents`, stored as safe nonnegative integer USD cents. Blank means “Not specified”; zero is a valid price. Editing, moving, Drank and Gifted preserve the price. No valuations or financial statistics were added.
-- **Wine Type:** free text with optional suggestions, trimmed before saving, accepted by filters and statistics. Drinking-window inputs/details are removed. Older wines with those fields remain readable and unchanged; editing creates a new wine revision without them. No migration/backfill/reset is needed.
-- **Scan Wine Label:** lazy-loaded Tesseract.js runs OCR entirely on the device. Explicit field labels, high-confidence standalone grape names, unambiguous vintage lines and bottle sizes can fill the form. Unknown/ambiguous fields are left unchanged; a new form starts blank. This is English text recognition, not a wine database or AI identification service. Decorative fonts, curved labels, glare, small print and non-English labels often require manual entry. Review every result before saving. Raw recognized text is available for review, with progress/cancel and failure messages.
-- **Take Photo / Upload Photo:** JPG, PNG and WebP inputs support device-camera capture where available and a file-picker fallback. Photos are resized to at most 640 pixels on the long edge, converted to JPEG, stripped of original metadata and bounded to 110,000 data-URL characters (about 80 KiB of JPEG). Preview, replace and remove are available; nothing is uploaded until the bottle save succeeds. HEIC is not supported—export it to JPG first.
+Snapshots are arrangements, **not full database backups**. They do not recover deleted records or restore old prices, descriptions or photographs. No automatic retention/deletion policy is enabled. Do not use a layout snapshot as a substitute for an existing full data backup.
 
-### Private photos on Spark
+### Spark resource implications
 
-Cloud Storage for Firebase now requires Blaze ([official FAQ](https://firebase.google.com/docs/storage/faq-and-troubleshooting)). This implementation does not enable it. Instead, **small thumbnails only** are saved in separate UID-protected immutable `photos` Firestore documents, atomically with the bottle and history. Large original images never enter Firestore. This is suitable for a small personal cellar within [Firestore's free quotas](https://firebase.google.com/docs/firestore/quotas); image documents consume the same storage, read/write and bandwidth allowances as other Firestore data. Monitor Usage, especially with many BOTTOM bottles or repeated photo replacements.
+Each ordinary occupancy transaction adds one coordination write and one compact journal write; the first change in a five-minute bucket adds one layout base. Manual snapshots add one document. A restore adds a safety snapshot and job, then bounded atomic step writes. Layouts contain identifiers/locations, not image data. Snapshot lists paginate 20 at a time, and automatic deltas are read on demand. Preset defaults use shared listeners, without polling or per-bottle fan-out writes.
 
-The photo payload field is exempt from indexing. Thumbnails load only when visible and are cached in memory for the session; they are not downloaded with every inventory update. A replacement creates a new photo document and removing a photo detaches it. Prior thumbnail documents remain private and retained, avoiding destructive cleanup; repeated replacements consume additional storage. Full-resolution albums would need separately authorized storage configuration.
+Firestore's normal document-size and usage quotas still apply; exceptionally large BOTTOM inventories/plans may reach those limits and must not be forced through by disabling validation. No paid storage, Cloud Functions, external AI service or billing upgrade is enabled. See the official [transaction/rules limits](https://firebase.google.com/docs/firestore/manage-data/transactions) and [Firestore quotas](https://firebase.google.com/docs/firestore/quotas).
 
-Saved thumbnails are shared persistent Firestore data and designed to appear across authenticated devices. This was verified with two independent **local emulator clients**, not the live Firebase project or physical devices. Cloud synchronization requires deploying the updated rules and index exemption to the existing project first, with explicit authorization. No new Firebase configuration values are needed.
+## Local development and verification
 
-OCR workers, WASM cores and English language data are copied from installed packages by `scripts/prepare-ocr.mjs` during `npm run dev` and `npm run build`. All are served from this website; no scan photos are sent to recognition APIs or CDNs. The OCR chunk loads only when scanning; its engine/language assets take several MB on first use. The browser may cache language data in IndexedDB. Added dependencies: `tesseract.js@7.0.0` (runtime) and `@tesseract.js-data/eng@1.0.0` (build/test language data). The [upstream local-installation guide](https://github.com/naptha/tesseract.js/blob/master/docs/local-installation.md) describes these self-hosted paths.
+Use Node 22.18+ or 24 and Java 21+ for the emulator suite. From this repository:
 
-## Local use
-
-Use Node.js 22.18+ or 24:
-
-```sh
+```powershell
 npm ci
+npm test
+npm run test:rules
+npm run build
 npm run dev
 ```
 
-Copy `.env.example` to `.env`, fill in the six **public** Firebase values described below, and restart Vite. Without configuration, the existing login card displays a setup message and disables login. There is no fake local inventory or browser-only password gate.
+If Java is not installed on PATH, this workspace already has a local runtime. For this shell only:
 
-`npm run build` checks TypeScript and creates `dist`; `npm run preview` serves that production build. HashRouter and relative Vite base `./` keep assets and page refreshes compatible with `/cellar/` and future custom domains. `/tests/ui.html` on the development server is a clearly labeled empty UI fixture that cannot save; `?fixtures=1#/cellar` enables explicitly labeled synthetic bottles for replay testing and `?fixtures=1&reduce=1#/?bottle=test-middle&replay=1` tests reduced motion. Fixtures are not included in `dist`.
-
-## Firebase setup — do these steps only when ready to configure the cloud project
-
-1. Use the **existing Firebase project and Web app**; do not create a replacement or reset data. Confirm it remains on Spark. Keep the existing administrator account and password-only login. Do not enable Analytics, Cloud Functions, Cloud Storage, extensions or other services for this website. The following account/database steps are references for an installation not yet configured; skip steps already completed.
-2. Enable Authentication → Sign-in method → **Email/Password**. Do not enable email-link login. In Authentication → Users, manually create one administrator account. Set a strong password directly in Firebase Console or your password manager; never place it in code, `.env`, shell arguments, GitHub variables or documentation. The website exposes no signup, registration, email, username, forgot-password or account-management interface.
-3. Copy that user's **UID** and account email. Replace the literal `REPLACE_WITH_ADMIN_UID` in `firestore.rules` with the UID. It is a public identifier, not a password. The frontend UID below must match it exactly. The rules deny all real users until this is configured.
-4. Create the **default Cloud Firestore database, Standard edition, in production mode**. Choose a suitable region for your devices. Do not use public test-mode rules. Publish the supplied `firestore.rules` and `firestore.indexes.json` to that project when you authorize cloud deployment. Keep the default deny rule for unknown collections.
-5. In Firebase Authentication → Settings → Authorized domains, add `ibahri1.github.io` (domain only, no `/cellar/` path). Add your localhost development domain when needed, and your actual custom domain only after it is assigned. Retain the project's Firebase Auth domain. The supplied `authDomain` should be the project's Firebase auth domain, not the GitHub Pages URL.
-6. Copy `.env.example` to `.env` and enter the Web app's public configuration and the two administrator identifiers:
-
-```text
-VITE_FIREBASE_API_KEY=YOUR_WEB_APP_API_KEY
-VITE_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_AUTH_DOMAIN
-VITE_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
-VITE_FIREBASE_APP_ID=YOUR_WEB_APP_APP_ID
-VITE_FIREBASE_ADMIN_EMAIL=YOUR_PRECREATED_ADMIN_EMAIL
-VITE_FIREBASE_ADMIN_UID=YOUR_PRECREATED_ADMIN_UID
+```powershell
+$env:PATH=(Resolve-Path '..\..\work\firebase-runtime\java21\jdk-21.0.12.1+1-jre\bin').Path+';'+$env:PATH
 ```
 
-These are public browser settings. **There is no password variable.** Do not add service-account keys, private keys or Admin SDK credentials to the frontend. The real administrator password goes only into the password field and Firebase's standard `signInWithEmailAndPassword` call. Login and session restoration both check the UID; Firestore rules independently enforce that same UID for every read/write.
+Copy `.env.example` to `.env` only when setting up another checkout. Retain the existing public `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_ADMIN_EMAIL` and `VITE_FIREBASE_ADMIN_UID` configuration. Do not commit `.env`, passwords, private keys or service-account credentials. The password-only administrator login and Firebase session behavior are unchanged.
 
-7. Optionally create `settings/cellar` once with exactly these integer fields (the app also keeps the matching rack constants in code):
+The emulator script uses **demo-private-cellar** and requires loopback Auth/Firestore emulator hosts; fixture accounts are synthetic. It does not authenticate to the live project. It clears only its local emulator database. Production tests use the normal SDK transaction code and the actual rules file with a test UID in the emulator-only copy.
 
-```json
-{"rackRows":12,"rackColumns":5,"rackDepth":3,"rackCapacity":180}
-```
+Development-only UI: `/tests/ui.html?fixtures=1&device=phone#/cellar`. Synthetic inventory is visibly labeled, writes are disabled, and Cellar History cannot access the database through the fixture. Add `&screensaver=1` to exercise inactivity behavior. These HTML fixtures are excluded from the production Vite build. Do not mistake a deliberate fixture save rejection for a live database test.
 
-If using Firebase CLI after explicitly approving cloud changes, authenticate to your intended project, then deploy **only** Firestore configuration:
+## Verification results
 
-```sh
-npx firebase deploy --only firestore:rules,firestore:indexes --project YOUR_PROJECT_ID
-```
+- Domain/layout/timer suite: 20 passing tests, including currency precision, size labels, legacy capacities, preset ordering, restore planning/conflicts/cycle staging, all 180 camera targets, mobile viewport geometry and screensaver cleanup.
+- Emulator suite: **34 passing checks**, including the exhaustive 32-case save matrix. Includes authentication, unauthorized access, legacy records, atomic add/edit/move/remove, three-bottle saves, over-180 BOTTOM inventory, simultaneous occupancy, swaps/stale clients, shared defaults/photos, immutable snapshots, durable grouping, safety backups, interruption/resumption, twelve-bottle restoration and invalid field rejection.
+- Browser fixture checks: 844x390 mobile landscape, 390x844 portrait, shortened 844x230 keyboard-sized viewport; hamburger navigation, producer-first fields, exact size dropdown, visible validation, save hitbox, failed-save retention, rotation draft retention, photo compression/preview/confirmation and both swap selection methods. These are simulated viewports, not physical-device certification.
+- TypeScript and production build passed. Final checks are reported with delivery.
+- Not live tested: production rules, hosted login/save, real-device synchronization, physical camera and native mobile keyboard behavior. No production data was read for QA or changed.
 
-No Firebase Hosting, Functions or Storage configuration exists in `firebase.json`. Do not run an unrelated deployment target. Test actual login, live persistence and two physical devices before relying on the collection. Local emulator success does not prove your hosted project is configured correctly.
+## Files changed
 
-## Required GitHub Actions variables
+Created: `src/layout.ts`, `src/cellar-history.ts`, `src/CellarHistory.tsx`, `src/SwapPicker.tsx`, `src/RotationGate.tsx`, `src/master-upgrade.css`, `tests/master.test.mjs`, `tests/master-firebase.test.mjs`.
 
-Under repository Settings → Secrets and variables → Actions → **Variables**, add these six values:
+Modified: `src/BottleManager.tsx`, `src/BottlePhoto.tsx`, `src/PhotoEditor.tsx`, `src/domain.ts`, `src/firestore.ts`, `src/store.tsx`, `src/Home.tsx`, `src/MobileShell.tsx`, `src/Screensaver.tsx`, `src/main.tsx`, `src/pages.tsx`, `src/mobile.css`, `src/upgrades.css`, `firestore.rules`, `firestore.indexes.json`, `package.json`, `package-lock.json`, `.gitignore`, `tests/firebase.test.mjs`, `tests/save-regression.test.mjs`, `tests/upgrades.test.mjs`, `tests/ui.tsx`, this README.
 
-| Variable | Value |
-| --- | --- |
-| `VITE_FIREBASE_API_KEY` | Firebase Web app API key |
-| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase project's Auth domain |
-| `VITE_FIREBASE_PROJECT_ID` | Firebase project ID |
-| `VITE_FIREBASE_APP_ID` | Registered Firebase Web app ID |
-| `VITE_FIREBASE_ADMIN_EMAIL` | Pre-created administrator email |
-| `VITE_FIREBASE_ADMIN_UID` | Same administrator UID as in `firestore.rules` |
+Removed: `src/LabelScanner.tsx`, `src/label.ts`, `scripts/prepare-ocr.mjs`, `public/THIRD_PARTY_OCR.txt`, OCR-only label fixtures and generated ignored `public/ocr` assets. Removed dependencies: `tesseract.js`, `@tesseract.js-data/eng`. No new dependencies. Logo, cellar image and Firebase credential files were not changed.
 
-The existing official Pages Actions workflow now reads these variables. Remove obsolete backend variables from your repository settings yourself when ready; the build no longer reads them. Set repository Pages Source to GitHub Actions. A main-branch push triggers deployment, so **do not push/deploy until authorized**. `.env` files are ignored. No domain was supplied; a future custom domain can use Pages settings plus `public/CNAME`, with DNS configured separately by you.
+## Deployment preparation — manual only
 
-## Firestore structure and integrity
+Both **Firestore rules/index settings and the website** need deployment. No data migration, new Firebase project, Storage setup or billing change is needed. Review the local diff, preserve your existing source/data backup, close other editing sessions and finish any restoration first. These commands are instructions, not actions executed by this task:
 
-| Collection | Purpose |
-| --- | --- |
-| `wines` | Immutable normalized wine records/revisions; custom wine type and legacy HTTPS image URLs/windows remain readable |
-| `bottles` | Individual bottle records; optional `priceCents`/`photoId`, `wineId`, coordinates, location key, status, notes/rating, timestamps, version and last activity ID |
-| `photos` | Private immutable compressed JPEG thumbnails, referenced by individual bottles; unindexed `dataUrl` |
-| `positions` | Deterministic `R1-C1-D1` reservation IDs, each linked to exactly one active rack bottle |
-| `activityHistory` | Immutable Added/Edited/Moved/Drank/Gifted events with wine snapshot, locations, bottle version and retry hash |
-| `outcomes` | One immutable record per removed bottle; enables count queries for Drank/Gifted without downloading archived bottles |
-| `settings` | Fixed rack dimensions/capacity; BOTTOM is additional |
-
-UI field names are adapted at the data boundary so the existing forms and business logic remain intact. BOTTOM records use `locationType: "BOTTOM"`, `locationKey: "BOTTOM"` and null row/column/depth; no reservation document is needed. There is no total BOTTOM capacity constraint.
-
-All related changes use a Firestore transaction. Rules use `getAfter()` to require the corresponding history and reservation state, validate coordinates against the deterministic location ID, forbid reservation overwrites, require release of an old rack reservation and require an outcome when a bottle is removed. Bottles and history cannot be deleted through the app. Wines and outcomes are immutable. Unknown fields/collections, unsupported statuses, changed creation timestamps, invalid coordinates and direct edits that skip history are denied.
-
-Edits create a wine revision for only the selected bottle. Other bottles and old history retain their original details. Version checks reject stale edits or removal confirmations; stable request/bottle/history IDs make an unchanged retry idempotent. Drank/Gifted remain confirmed UI actions, preserve the dated bottle record and free the rack location. A failed atomic save leaves no partial inventory/history/reservation changes.
-
-**Per-save limit: three bottles, or one when attaching a new photo.** This bounds rules' document access calls below Firestore's transaction limits, including all validation. Add further batches for larger quantities. This is not a fixed capacity for BOTTOM or a change to the 180-slot main rack. The UI explains the limit before saving.
-
-The upgraded local rules accept optional integer `priceCents`, optional private `photoId`, and arbitrary nonblank wine-type strings up to 160 characters. They permit legacy window keys without requiring them. Move/removal updates cannot alter price/photo fields. The existing administrator UID restriction, reservations, version checks and atomic history requirements remain. **Do not publish rules until explicitly authorized.** Preserve the existing project's administrator UID when applying this file; never substitute a test UID. Deploy rules/indexes before the frontend, then smoke-test the existing account and legacy bottles. No data migration is required.
-
-Rules secure client operations; project owners, Admin SDK/server credentials and Firebase Console can bypass them. Do not use privileged tools to rewrite bottle/reservation/history documents independently. Such external edits are outside the client's integrity guarantees. No privileged credentials are used in this website.
-
-## Synchronization, performance and free-plan behavior
-
-- One collection-level listener tracks active bottles. Referenced immutable wines are fetched once and cached in memory for the session. No per-rack subscriptions or polling.
-- History has its own paginated listener only while the History page is open. Later pages use stable timestamp/document-ID cursors; a new first-page event resets pagination. Archived bottle details load only when requested.
-- Drank/Gifted totals use server aggregation queries over `outcomes` at initial load, removal events and explicit refresh. Ordinary inventory use does not download historical bottles or history.
-- Only server-confirmed snapshots update inventory. Transactions require connectivity; offline operations fail visibly rather than silently queuing inventory writes. An open tab can display its last confirmed inventory with an offline label, and Firestore reconnects automatically.
-- Firebase Auth uses standard session persistence within the tab. Wine inventory has no persistent disk/localStorage cache. Auth refresh and logout use the SDK, with no custom tokens, hashes, server password gate or old eight-hour session policy.
-- Spark quotas still apply to document reads/writes, rule lookups, stored history and listeners. Reconnects/refreshes can cause reads. Exhausted quotas are shown as errors; the project never enables billing automatically. Use Firebase's Usage dashboard to monitor them.
-- Firebase's built-in password protections apply. There is no custom global throttle or Cloud Function. The internal email/UID and Web app configuration are public, as requested; rules, not configuration secrecy, protect inventory. Other Auth accounts—even if created through Firebase's APIs—cannot read this cellar unless they have the exact authorized UID.
-
-## Tests and verification
-
-```sh
+```powershell
 npm test
-# Requires Java 21+ on PATH; starts/stops only local Auth and Firestore emulators:
 npm run test:rules
 npm run build
+git diff --check
+git status --short
 ```
 
-The emulator suite uses the fixed **demo-private-cellar** project and refuses to run without loopback emulator hosts. Fixture accounts/passwords are local test data, not real credentials or a proposed administrator password. No Firebase login or live project is needed. The CLI may download the official Firestore emulator on first use; Java is only a development/test requirement, not a website runtime dependency.
+After approving the reviewed changes, deploy the prepared validation/index settings to the existing project:
 
-Tests cover correct/incorrect password, UID rejection, logout, anonymous/unrelated-user denial, unknown collections, a three-rack transaction, 183 additional BOTTOM bottles, atomic rollback, idempotency, simultaneous occupancy attempts, stale edits, all movement directions, Drank/Gifted records, history tampering, missing history/reservations, invalid coordinates, collection listener updates, history pagination and settings validation. Upgrade tests cover integer prices, optional prices, legacy documents, custom types, photo privacy/persistence, invalid prices/photos, conservative OCR on readable/blank fixtures, all 180 target addresses and separate capacity calculations.
+```powershell
+npx firebase-tools deploy --only firestore:rules,firestore:indexes --project cellar-784b2
+```
 
-Browser checks use clearly labeled synthetic fixtures: first/middle/last rows across five columns, Front/Middle/Back and BOTTOM replay, Skip, Return, refreshed replay URLs, reduced motion, desktop/mobile landscape, portrait guard, custom type/price entry, absent window fields, JPEG preview/removal and readable/blank label OCR. Camera file-input capture is implemented but physical camera permissions/hardware were not tested.
+Then commit/push the reviewed local changes from the `main` branch of this existing repository to trigger its existing official GitHub Pages workflow:
 
-**Not live-tested:** hosted Firebase credentials, production rules/index deployment, real cloud persistence, physical-device synchronization and actual GitHub Pages deployment. Verify those after authorized deployment. The image map is calibrated to the supplied image; it does not change existing physical inventory assignments.
+```powershell
+git add -- .
+git commit -m "Upgrade mobile cellar, shared presets, swaps and layout history"
+git push origin main
+```
 
-The runtime dependency audit is checked separately with `npm audit --omit=dev`. A compatible patched gRPC override addresses the Firebase SDK's Node transport advisory. The development-only Firebase CLI dependency tree still reports upstream advisories; it is not bundled into `dist`. Do not apply `npm audit fix --force` blindly or downgrade the SDK to resolve CLI-only warnings. Review/update test tooling as upstream fixes become available.
+No force push. If the changes are already committed/pushed through your normal review workflow, do not create duplicate commits; use GitHub Actions' existing **Deploy wine cellar to GitHub Pages** workflow instead. Wait for successful Pages deployment, refresh all devices, then verify hosted login, one confirmed save, photo synchronization and layout history before rearranging further. Keep the existing pre-upgrade data and source backup. Do not delete new metadata/coordination collections when investigating an issue.
 
-Advanced AI wine identification and full-resolution photo storage are not implemented. External wine lookup, advanced recommendations and import/export reports remain outside these upgrades. No paid Firebase service or wine API is used. No existing cloud data was migrated or deleted.
-
-## Files changed in these upgrades
-
-- Updated `public/cellar.png`, `src/rack.ts`, `src/Home.tsx`; added `src/CellarReplay.tsx`, `src/upgrades.css` and `public/THIRD_PARTY_OCR.txt` with bundled OCR license copies.
-- Updated `src/BottleManager.tsx`, `src/pages.tsx`, `src/domain.ts`, `src/firestore.ts`, `src/store.tsx`, `src/main.tsx`.
-- Added `src/BottlePhoto.tsx`, `src/PhotoEditor.tsx`, `src/photos.ts`, `src/LabelScanner.tsx`, `src/label.ts` and `scripts/prepare-ocr.mjs`.
-- Updated `firestore.rules`, `firestore.indexes.json`, `package.json`, `package-lock.json`, `.gitignore` and this guide.
-- Updated `tests/domain.test.mjs`, `tests/firebase.test.mjs`, `tests/ui.tsx`; added `tests/upgrades.test.mjs` and synthetic `tests/fixtures` images. Existing login/configuration/workflow files are preserved.
-
-Official references: [Firebase password authentication](https://firebase.google.com/docs/auth/web/password-auth), [Auth session persistence](https://firebase.google.com/docs/auth/web/auth-state-persistence), [atomic writes and rules](https://firebase.google.com/docs/firestore/manage-data/transactions), [rules conditions and limits](https://firebase.google.com/docs/firestore/security/rules-conditions), [Spark pricing](https://firebase.google.com/pricing), [Emulator Suite](https://firebase.google.com/docs/emulator-suite/install_and_configure).
-
-## BAHRI inactivity screensaver
-
-After authenticated sign-in, 30 seconds without mouse, pointer, keyboard, scrolling or touch activity opens a full-viewport black screensaver using the original `public/bahri-logo.png`. The artwork is contained without cropping. Clicking/tapping anywhere, Enter/Space, or Escape dismisses it without navigating, reloading, changing inventory or signing out. The current screen and open menus remain mounted; a new 30-second timer starts after dismissal.
-
-The clock pauses while an input is focused, a bottle form is open (including photo selection/compression, OCR and saving), inventory/history is loading, a historical bottle is opening, a cellar replay is running, or the browser tab is hidden. Returning to an idle-ready screen starts a fresh 30 seconds. Future async UI operations can expose `aria-busy="true"` or `data-screensaver-pause="true"` to participate. Reduced-motion preferences disable the fade.
-
-`npm test` covers the timer deadline, activity resets, pause/resume and cleanup. The development-only `tests/ui.html?fixtures=1&screensaver=1#/cellar` enables browser checks using marked synthetic inventory with database writes disabled; its `/login` route disables the screensaver. This fixture is excluded from production. No new dependencies or Firebase configuration/rules changes are required. Deploy only the website when approved.
+Vite retains its relative base and HashRouter, so assets/navigation work under `/cellar/`. Existing GitHub repository variables supply public Firebase settings in the workflow; no secret credentials are bundled. No custom domain or DNS changes were made.

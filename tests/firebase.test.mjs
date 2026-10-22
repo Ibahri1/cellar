@@ -1,3 +1,4 @@
+import {prepareChange,commitChange} from '../src/cellar-history.ts';
 // LOCAL EMULATORS ONLY. No live Firebase project or real credentials are used.
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {initializeTestEnvironment,assertFails} from '@firebase/rules-unit-testing';
 import {initializeApp,deleteApp} from 'firebase/app';
 import {initializeAuth,inMemoryPersistence,connectAuthEmulator,createUserWithEmailAndPassword,signOut} from 'firebase/auth';
-import {doc,collection,getDoc,getDocs,query,where,orderBy,documentId,limit,startAfter,setDoc,deleteDoc,updateDoc,writeBatch,serverTimestamp,setLogLevel,onSnapshot} from 'firebase/firestore';
+import {doc,collection,getDoc,getDocs,query,where,orderBy,documentId,limit,startAfter,setDoc,deleteDoc,updateDoc,writeBatch,runTransaction,serverTimestamp,setLogLevel,onSnapshot} from 'firebase/firestore';
 import {saveMutation,loadBottle,removalTotals,activeQuery,MAX_ADD_BATCH} from '../src/firestore.ts';
 import {authenticateAdmin} from '../src/auth.ts';
 import {allRackPositions,bottom} from '../src/domain.ts';
@@ -169,11 +170,11 @@ test('Firebase Authentication and Firestore rules/transactions',async t=>{
  });
  await t.test('rules reject fractional/negative prices, oversized photos and unsupported photo formats',async()=>{
   const original=await raw(third.id),savedWine=(await getDoc(doc(db,'wines',original.wineId))).data();
-  function priceEdit(price){
-   const id=randomUUID(),batch=writeBatch(db);
+  async function priceEdit(price){
+   const id=randomUUID();return runTransaction(db,async batch=>{const prepared=await prepareChange(batch,db);
    batch.update(doc(db,'bottles',third.id),{priceCents:price,version:original.version+1,updatedAt:serverTimestamp(),lastActivityId:id});
    batch.set(doc(db,'activityHistory',id),{id,bottleId:third.id,wineId:original.wineId,wineName:savedWine.name,vintage:savedWine.vintage,action:'Edited',previousLocation:original.locationKey,newLocation:original.locationKey,bottleVersion:original.version+1,requestHash:'a'.repeat(64),createdAt:serverTimestamp()});
-   return batch.commit();
+   commitChange(batch,db,prepared,id,prepared.state.layout,[third.id],false);});
   }
   for(const price of [-1,19.99,9007199254740992])await assertFails(priceEdit(price));
   await priceEdit(1999);assert.equal((await loadBottle(db,third.id)).price_cents,1999);

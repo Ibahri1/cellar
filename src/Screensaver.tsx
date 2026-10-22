@@ -9,7 +9,7 @@ export default function Screensaver({enabled,paused=false}:{enabled:boolean;paus
  useEffect(()=>{if(!enabled){setVisible(false);return;}const preload=new Image();preload.src=bahriArtwork;},[enabled]);
  useEffect(()=>{
   if(!enabled||visible)return;
-  const blocked=()=>paused||document.hidden||Boolean(document.querySelector('form,[aria-busy="true"],[data-screensaver-pause="true"]'))||Boolean(document.activeElement?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'));
+  const blocked=()=>paused||document.hidden||Boolean(document.querySelector('form:not([data-idle-ignore]),[aria-busy="true"],[data-screensaver-pause="true"]'))||Boolean(document.activeElement?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'));
   const timer=new IdleTimer(()=>{if(blocked()){timer.setPaused(true);return;}previousFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;setVisible(true);},{now:()=>performance.now(),set:(callback,delay)=>window.setTimeout(callback,delay),clear:handle=>window.clearTimeout(handle as number)});
   const syncPause=()=>timer.setPaused(blocked());
   const activity=()=>{syncPause();timer.activity();};
