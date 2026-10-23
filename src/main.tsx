@@ -17,6 +17,7 @@ import './upgrades.css';
 import './mobile.css';
 import './branding.css';
 import './master-upgrade.css';
+import './bottle-navigation.css';
 const Secondary = lazy(() => import('./pages'));
 const links = [{to:'/',label:'Home',icon:Wine},{to:'/cellar',label:'My Cellar',icon:LayoutGrid},{to:'/search',label:'Search',icon:Search},{to:'/statistics',label:'Statistics',icon:ChartNoAxesCombined},{to:'/history',label:'History',icon:History},{to:'/cellar-history',label:'Cellar History',icon:History},{to:'/settings',label:'Settings',icon:Settings}];
 
