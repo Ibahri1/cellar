@@ -1,0 +1,27 @@
+/* Producer-first hierarchy applies to the existing desktop and compact cards. */
+.wine-card h2{font-family:Georgia,serif;font-weight:700;font-size:23px;line-height:1.25}
+.wine-card .inventory-wine-name{font-size:15px;color:#d6c7af;margin:5px 0}.wine-card-heading>div{min-width:0}
+.mobile-wine-producer{font:700 21px/1.22 Georgia,serif;color:#ead4ae;overflow-wrap:anywhere;margin:0 0 5px}
+.mobile-wine-name{font:400 14px/1.4 Arial,sans-serif;color:#d1c3ac;margin:0}.mobile-wine-meta{font-size:12px}
+.inventory-locate{grid-column:1/-1;min-height:44px;font-size:12px;padding:8px;border-radius:7px}
+.listing-price{font-size:10px;color:#c8b187;margin-inline:5px}.bottle-listing>a{display:grid;place-items:center;min-width:44px;min-height:44px}
+.replay-experience{position:fixed;inset:0;margin:0;width:100vw;max-width:none;height:var(--visual-height,100dvh);max-height:none;padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border:0;color:#eadac0;background:transparent;overflow:hidden}
+.replay-experience[open]{display:flex;flex-direction:column;gap:12px}.replay-experience::backdrop{background:transparent}
+.replay-experience.has-scene{background:#100e0b;animation:scene-enter .5s ease-out}
+.cinema-controls{display:flex;align-items:center;flex-shrink:0;gap:8px;min-width:0;background:#191510ed;padding:8px 10px;border:1px solid #b79b6255;border-radius:10px}
+.cinema-controls>span{margin-right:auto;display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:1px;color:#d8bd87;min-width:0;overflow-wrap:anywhere}.cinema-controls button{min-height:44px;white-space:nowrap;font-size:12px;flex-shrink:0}
+.cinema-layout{display:grid;grid-template-columns:minmax(0,1fr) clamp(255px,25vw,330px);gap:16px;flex:1;min-height:0}
+.cinema-visual{position:relative;min-width:0;min-height:0;overflow:hidden;border-radius:12px}.has-scene .cinema-visual{border:1px solid #bda27035;background:radial-gradient(ellipse at center,#30281d,#100e0b)}
+.rack-3d-canvas{position:absolute;inset:0}.rack-3d-canvas canvas{display:block;width:100%;height:100%;touch-action:none}.rack-3d-canvas canvas[hidden]{display:none}
+.scene-caption{position:absolute;top:18px;left:20px;right:20px;pointer-events:none;display:flex;flex-direction:column;gap:5px}.scene-caption strong{font:24px Georgia,serif;color:#d9b77b}.scene-caption span{font-size:11px;color:#a89a83}
+.scene-staging-label{position:absolute;bottom:18px;left:20px;font-size:11px;color:#ac9875;pointer-events:none}
+.cinema-information{visibility:hidden;min-height:0;overflow:auto;overscroll-behavior:contain;background:#201b15ed;border:1px solid #bda27055;padding:20px;border-radius:12px;scroll-padding:12px}
+.cinema-information.revealed{visibility:visible}.cinema-information h2{font:700 25px/1.25 Georgia,serif;margin:10px 0 7px;overflow-wrap:anywhere}.cinema-information>p{font-size:13px;line-height:1.5;margin:6px 0;color:#beae91}.cinema-information .cinema-wine-name{font-size:16px;color:#e0d1b8}
+.cinema-coordinate{display:block;font-size:13px;line-height:1.5;color:#e8c98d;margin:18px 0 12px}.scene-depth-guide{list-style:none;padding:0;margin:12px 0;display:grid;gap:8px}
+.scene-depth-guide li{border:1px solid #b9a17033;border-radius:7px;padding:11px;color:#b0a18a;display:flex;flex-direction:column;gap:6px;font-size:12px;overflow-wrap:anywhere}.scene-depth-guide li.active{border-color:#d7b56b;background:#b3976219;color:#f2d39a}.scene-depth-guide strong{font-size:11px;letter-spacing:.8px}.scene-depth-guide small{font-size:10px;color:#bca577}
+.scene-disclaimer{display:block;font-size:11px;line-height:1.6;color:#aa987a;margin:12px 0}.cinema-information>button{width:100%;min-height:44px;margin-top:8px}
+.scene-fallback,.cinema-unavailable{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:65px 25px;text-align:center;font-size:14px;line-height:1.7;color:#d4bf98}.scene-fallback{height:100%;background:#18140f}.scene-fallback p{max-width:420px}.cinema-unavailable{background:#18140fee;border-radius:12px}
+@keyframes scene-enter{from{opacity:0}to{opacity:1}}
+@media(max-height:500px){.replay-experience{padding:6px 10px;gap:6px!important}.cinema-controls{padding:2px 6px;gap:5px}.cinema-controls>span{font-size:9px;letter-spacing:.2px}.cinema-controls button{font-size:11px;padding:6px 9px}.cinema-layout{grid-template-columns:minmax(0,1fr) 250px;gap:8px}.cinema-information{padding:12px}.cinema-information h2{font-size:20px}.cinema-coordinate{margin:8px 0;font-size:11px}.scene-depth-guide{gap:5px;margin:8px 0}.scene-depth-guide li{padding:7px;font-size:11px}.scene-caption{top:12px;left:14px}.scene-caption strong{font-size:20px}.scene-caption span,.scene-staging-label{font-size:9px}}
+@media(max-width:700px){.cinema-controls>span{font-size:0;gap:0}.cinema-controls>span svg{width:18px}.cinema-controls button{gap:4px;font-size:10px;padding:6px}.cinema-layout{grid-template-columns:minmax(0,1fr) 220px}.cinema-information{padding:10px}}
+@media(prefers-reduced-motion:reduce){.replay-experience{animation:none!important}}

@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/domain.test.mjs tests/upgrades.test.mjs tests/mobile.test.mjs tests/idle.test.mjs tests/master.test.mjs tests/bottle-navigation.test.mjs",
+    "test": "node --test tests/domain.test.mjs tests/upgrades.test.mjs tests/mobile.test.mjs tests/idle.test.mjs tests/master.test.mjs tests/bottle-navigation.test.mjs tests/cinema.test.mjs",
     "test:rules": "firebase emulators:exec --project demo-private-cellar --only auth,firestore \"node --test --test-concurrency=1 tests/firebase.test.mjs tests/save-regression.test.mjs tests/master-firebase.test.mjs\""
   },
   "dependencies": {
@@ -15,13 +15,15 @@
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0"
+    "react-router-dom": "^7.0.0",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "6.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^4.3.0",
     "firebase-tools": "15.33.0",
     "tailwindcss": "^4.0.0",

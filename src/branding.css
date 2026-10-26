@@ -28,7 +28,7 @@ footer>.brand-logo{width:120px}
 .bahri-login-page .login-panel>label{margin-top:3px}
 .bahri-login-page .login-panel small{font-size:11px;margin-top:2px}
 
-@media (max-width:767px), (max-width:900px) and (orientation:portrait), (max-width:1023px) and (max-height:500px){
+@media (max-width:767px), (max-width:900px) and (orientation:portrait), (max-width:1023px) and (max-height:500px), (min-width:1000px) and (max-width:1366px) and (orientation:landscape){
  .login-page.bahri-login-page{--logo-width:min(calc(100vw - 24px),620px);--logo-top:calc(12px + env(safe-area-inset-top));gap:18px;padding:var(--logo-top) max(18px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left))}
  .bahri-login-page .login-panel{padding:25px 22px;gap:17px;border-radius:18px}
  .bahri-login-page .login-panel h1{font-size:27px}

@@ -1,7 +1,7 @@
 import {inventoryBottleUrl} from './bottle-navigation';
 import BrandLogo from './BrandLogo';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {useNavigate} from 'react-router-dom';
+import {useLocation,useNavigate} from 'react-router-dom';
 import SwapPicker from './SwapPicker';
 import {sortPresets,bottleSizes,formatBottleSize} from './layout';
 import PhotoEditor from './PhotoEditor';
@@ -24,7 +24,7 @@ function PositionPicker({value,onChange,available,label}:{value:Placement;onChan
  return <fieldset className="placement"><legend>{label}</legend><label>Storage<select value={value.location_type} onChange={e=>onChange(e.target.value==='BOTTOM'?bottom:candidates[0]??{location_type:'RACK',row_number:1,column_number:1,depth_number:1})}><option value="RACK" disabled={!candidates.length}>Main rack</option><option value="BOTTOM">Bottom storage</option></select></label>{value.location_type==='RACK'&&<><label>Row<select value={value.row_number!} onChange={e=>change('row_number',+e.target.value)}>{rows.map(r=><option key={r} value={r} disabled={!candidates.some(p=>p.row_number===r)}>{r}</option>)}</select></label><label>Column<select value={value.column_number!} onChange={e=>{const c=+e.target.value;onChange(candidates.find(p=>p.row_number===value.row_number&&p.column_number===c)??value);}}>{cols.map(c=><option key={c} value={c} disabled={!candidates.some(p=>p.row_number===value.row_number&&p.column_number===c)}>{c}</option>)}</select></label><label>Depth<select value={value.depth_number!} onChange={e=>change('depth_number',+e.target.value)}>{['Front','Middle','Back'].map((d,i)=><option key={d} value={i+1} disabled={!candidates.some(p=>p.row_number===value.row_number&&p.column_number===value.column_number&&p.depth_number===i+1)}>{d}{candidates.some(p=>p.row_number===value.row_number&&p.column_number===value.column_number&&p.depth_number===i+1)?'':' · occupied'}</option>)}</select></label></>}</fieldset>;
 }
 export default function BottleManager({editor,onClose,onChange}:{editor:Editor;onClose:()=>void;onChange:(e:Editor)=>void}){
- const {bottles,catalog,mutate}=useCellar();const navigate=useNavigate();
+ const {bottles,catalog,mutate}=useCellar();const navigate=useNavigate(),route=useLocation();
  const mobile=useMobile();const dirty=useRef(false),submitted=useRef(false);const [discard,setDiscard]=useState(false);
  function requestClose(){if(busy)return;if(mobile&&dirty.current&&editor.mode!=='details')setDiscard(true);else onClose();}
  const bottle='bottle'in editor?editor.bottle:null;
@@ -74,7 +74,7 @@ export default function BottleManager({editor,onClose,onChange}:{editor:Editor;o
   catch(failure){setError((failure as Error).message);requestAnimationFrame(()=>dialog.current?.querySelector<HTMLElement>('.form-error')?.scrollIntoView({block:'center'}));}finally{submitted.current=false;setBusy(false);}
  }
  const photoEditor=<PhotoEditor value={photo} bottle={bottle??(selectedWine?{id:'preview',wine,photo_id:null} as Bottle:null)} onBusy={setPhotoBusy} onChange={data=>{setPhoto(data);setWine(previous=>({...previous,image_url:null}));setPhotoConfirmed(false);}}/>;
- const locate=()=>{if(bottle){onClose();navigate('/?bottle='+encodeURIComponent(bottle.id)+'&location='+locationLabel(bottle)+'&replay=1');}};
+ const locate=()=>{if(bottle){onClose();navigate('/?bottle='+encodeURIComponent(bottle.id)+'&location='+locationLabel(bottle)+'&replay=1',{state:{replayReturn:{pathname:route.pathname,search:route.search}}});}};
  const remove=editor.mode==='Drank'||editor.mode==='Gifted';
  const title=editor.mode==='add'?'Add bottles':editor.mode==='details'?'Bottle details':editor.mode==='edit'?'Edit bottle':editor.mode==='move'?'Move bottle':editor.mode==='swap'?'Swap Positions':`Mark as ${editor.mode}`;
  return <dialog ref={dialog} className={`bottle-dialog ${editor.mode==='details'?'detail-dialog':''}`} onCancel={e=>{if(mobile){e.preventDefault();requestClose();}else if(busy)e.preventDefault();else onClose();}}><div className="dialog-title" inert={discard}><div><BrandLogo className="brand-logo--small"/><h2>{title}</h2></div><button disabled={busy} className="icon-button" aria-label="Close bottle panel" onClick={requestClose}><X size={18}/></button></div>

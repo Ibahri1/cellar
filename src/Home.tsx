@@ -1,7 +1,7 @@
 import BrandLogo from './BrandLogo';
 import {useEffect,useRef,useState} from 'react';
 import {useLocation,useNavigate} from 'react-router-dom';
-import CellarReplay from './CellarReplay';
+import CellarExperience from './CellarReplay';
 import {X,Wine,ChevronRight} from 'lucide-react';
 import {positions,rack} from './rack';
 import {useCellar} from './store';
@@ -10,7 +10,7 @@ import BottleManager,{type Editor} from './BottleManager';
 import CellarViewer from './CellarViewer';
 import {useMobile} from './mobile';
 import {useMobileEditor} from './mobile-editor';
-import {firstOccupiedDepth,inventoryBottleUrl} from './bottle-navigation';
+import {firstOccupiedDepth,inventoryBottleUrl,replayReturnTarget} from './bottle-navigation';
 import {useSelectionReveal} from './useSelectionReveal';
 export default function Home({reducedMotionOverride}:{reducedMotionOverride?:boolean}={}){
  const route=useLocation();const navigate=useNavigate();const stage=useRef<HTMLDivElement>(null);
@@ -58,7 +58,7 @@ export default function Home({reducedMotionOverride}:{reducedMotionOverride?:boo
    {selectedDetails}{depth!==null&&!current&&<div className="position-detail"><Wine size={30} strokeWidth={1}/><h2>{selected.id}-D{depth+1}</h2><p>{ready?'Available position':'Inventory unavailable'}</p><small>The bottles shown in the image are decorative.</small><button disabled={!ready||loading} className="primary" onClick={()=>current?edit({mode:'details',bottle:current}):position&&edit({mode:'add',location:position})}>{current?'View bottle details':'Add bottle'}</button></div>}</>}
    <div className="connection-note"><span>{error||`${sync}${loading?' · Refreshing…':''}`}</span></div>
   </aside>}
-  {replayId&&replayBottle&&<CellarReplay key={replayId+locationLabel(replayBottle)} reducedMotionOverride={reducedMotionOverride} bottle={replayBottle} stage={stage} onExit={()=>navigate('/',{replace:true})} onDetails={()=>edit({mode:'details',bottle:replayBottle})}/>}
+  {replayId&&replayBottle&&<CellarExperience key={replayId+locationLabel(replayBottle)+route.key} reducedMotionOverride={reducedMotionOverride} bottle={replayBottle} inventory={bottles} stage={stage} onExit={()=>navigate(replayReturnTarget(route.state?.replayReturn,replayBottle.id),{replace:true})} onFullCellar={()=>navigate('/?bottle='+encodeURIComponent(replayBottle.id),{replace:true})} onDetails={()=>edit({mode:'details',bottle:replayBottle})}/>}
   {replayId&&!replayBottle&&<aside aria-busy={!replayError} className="replay-card"><p>{replayError||'Locating your bottle…'}</p><button className="secondary" onClick={()=>navigate('/',{replace:true})}>Return to Full Cellar</button></aside>}
   {editor&&<BottleManager key={JSON.stringify(editor)} editor={editor} onClose={()=>setEditor(null)} onChange={setEditor}/>}
  </main>;
